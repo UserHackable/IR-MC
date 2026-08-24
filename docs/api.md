@@ -13,7 +13,9 @@ Default topic prefix is `ir`. HTTP listens on port **8080**.
 | GET | `/commands` | — | Same as `/devices` |
 | POST | `/ir/<device>/<command>` | optional `{"repeat":2}` | Send named command |
 | POST | `/ir/send` | JSON (named, protocol, or raw) | Send |
-| POST | `/ir/learn` | optional `{"timeout_ms":8000,"device":"sceptre","command":"power"}` | Capture next remote press |
+| POST | `/ir/learn` | optional `{"timeout_ms":8000,"device":"sceptre","command":"power"}` | Capture next remote press (includes `tk64` analog stats) |
+| GET/POST | `/adc/led` | — | GPIO18 DC on/off, ADC GPIO32 millivolts (÷2 tap) |
+| GET | `/adc/tk64` | — | TK64 phototransistor millivolts on GPIO34 |
 | PUT | `/commands` | JSON with `device`, `command`, code fields | Add / update and persist |
 | DELETE | `/commands` | `{"device":"tv","command":"power"}` | Remove and persist |
 | POST | `/config/mqtt` | `{"uri":"mqtt://host:1883","prefix":"ir",...}` | Save broker to NVS and reconnect |

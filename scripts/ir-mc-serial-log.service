@@ -1,0 +1,15 @@
+[Unit]
+Description=IR-MC USB serial log (IRMSG lines from ESP32)
+After=dev-ttyUSB0.device
+BindsTo=dev-ttyUSB0.device
+
+[Service]
+Type=simple
+User=rob
+SupplementaryGroups=uucp
+ExecStart=/usr/bin/python3 /home/rob/User-Hackable/IR-MC/scripts/ir-serial-log.py
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target

@@ -19,3 +19,8 @@
 #ifndef IR_RX_GPIO
 #define IR_RX_GPIO GPIO_NUM_19
 #endif
+
+/* Lonely Binary TK64 phototransistor (raw, no demod). ADC1 CH6. */
+#ifndef IR_RAW_GPIO
+#define IR_RAW_GPIO GPIO_NUM_34
+#endif

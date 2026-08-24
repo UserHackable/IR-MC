@@ -8,6 +8,11 @@
 
 esp_err_t ir_tx_init(void);
 
+/* Steal GPIO18 from RMT as a plain DC output (transistor on/off, no carrier). */
+esp_err_t ir_tx_dc_begin(void);
+void ir_tx_dc_set(int on);
+esp_err_t ir_tx_dc_end(void);
+
 /* timings: mark, space, mark, space, ... microseconds. Odd last value is a trailing mark. */
 esp_err_t ir_tx_send_raw(uint32_t freq_hz, const uint16_t *timings, size_t count,
                          int repeat, int gap_ms);

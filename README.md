@@ -33,10 +33,10 @@ Living spec: [ESP32-IR-Remote-Bridge.md](ESP32-IR-Remote-Bridge.md).
 
 ## Status
 
-Firmware compiles against ESP-IDF 5.3.x. Bench modules are on the LAN:
-**listen** (`ir-rx-*`, GPIO 19 TSOP) and **blast** (`ir-tx-*`, GPIO 18 LED).
-Sceptre volume-up/down (Sony 12-bit addr 1 / cmd 18 and 19) were learned and
-replayed over IR.
+Firmware compiles against ESP-IDF 5.3.x. The live bench board is on **Haruna**
+(`ir-mc-582abd78af4c`, `192.168.72.143`): TK16 TX on GPIO18, TK15 learn on
+GPIO19, TK64 analog on GPIO34. Sceptre is Sony 12-bit addr 1: vol± 18/19,
+power **toggle 21**. See [docs/STATUS.md](docs/STATUS.md).
 
 | Piece | State |
 |-------|--------|

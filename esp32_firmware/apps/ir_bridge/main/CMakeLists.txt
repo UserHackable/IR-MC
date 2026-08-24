@@ -3,6 +3,8 @@ idf_component_register(
     "main.c"
     "ir_tx.c"
     "ir_rx.c"
+    "led_sense.c"
+    "ir_raw.c"
     "catalog.c"
     "net_ctrl.c"
   INCLUDE_DIRS "."
@@ -14,6 +16,7 @@ idf_component_register(
     esp_http_server
     esp_timer
     driver
+    esp_adc
     mqtt
     json
     spiffs

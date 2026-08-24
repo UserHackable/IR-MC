@@ -5,6 +5,8 @@ idf_component_register(
     "${SHARED}/main.c"
     "${SHARED}/ir_tx.c"
     "${SHARED}/ir_rx.c"
+    "${SHARED}/led_sense.c"
+    "${SHARED}/ir_raw.c"
     "${SHARED}/catalog.c"
     "${SHARED}/net_ctrl.c"
   INCLUDE_DIRS
@@ -17,6 +19,7 @@ idf_component_register(
     esp_http_server
     esp_timer
     driver
+    esp_adc
     mqtt
     json
     spiffs

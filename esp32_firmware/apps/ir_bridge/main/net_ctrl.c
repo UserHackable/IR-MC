@@ -4,6 +4,8 @@
 #include "catalog.h"
 #include "ir_tx.h"
 #include "ir_rx.h"
+#include "led_sense.h"
+#include "ir_raw.h"
 
 #include "cJSON.h"
 #include "esp_http_server.h"
@@ -75,6 +77,9 @@ static const char k_index_html[] =
     "<section><h2>Send raw</h2>"
     "<textarea id=raw rows=6>{ \"freq\": 38000, \"timings\": [9000,4500,560,1690,560,560], \"repeat\": 1 }</textarea>"
     "<p><button onclick=\"sendRaw()\">Send raw</button></p></section>"
+    "<section><h2>LED anode sense</h2>"
+    "<p>GPIO18 DC on/off, ADC1_CH4 on silk 32 (÷2 divider tap). Estimates LED+ as 2×.</p>"
+    "<p><button onclick=\"post('/adc/led')\">Measure</button></p></section>"
 #endif
     "<pre id=log></pre>"
     "<script>"
@@ -325,6 +330,67 @@ static esp_err_t handler_health(httpd_req_t *req)
     return httpd_resp_sendstr(req, "ok\n");
 }
 
+static esp_err_t handler_adc_led(httpd_req_t *req)
+{
+#if !IR_TX_ENABLE
+    httpd_resp_set_type(req, "application/json");
+    httpd_resp_set_status(req, "501 Not Implemented");
+    return httpd_resp_sendstr(req, "{\"ok\":false,\"error\":\"this module is receive-only\"}");
+#else
+    int on_mv = 0;
+    int off_mv = 0;
+    int64_t t0 = esp_timer_get_time();
+    esp_err_t err = led_sense_run(&on_mv, &off_mv);
+    int64_t ms = (esp_timer_get_time() - t0) / 1000;
+
+    cJSON *root = cJSON_CreateObject();
+    cJSON_AddBoolToObject(root, "ok", err == ESP_OK);
+    cJSON_AddNumberToObject(root, "drive_gpio", 18);
+    cJSON_AddNumberToObject(root, "adc_gpio", 32);
+    cJSON_AddNumberToObject(root, "adc_channel", 4);
+    cJSON_AddNumberToObject(root, "on_mv", (double)on_mv);
+    cJSON_AddNumberToObject(root, "off_mv", (double)off_mv);
+    cJSON_AddNumberToObject(root, "led_plus_on_mv_est", (double)(on_mv * 2));
+    cJSON_AddNumberToObject(root, "led_plus_off_mv_est", (double)(off_mv * 2));
+    cJSON_AddNumberToObject(root, "ms", (double)ms);
+    if (err != ESP_OK) {
+        cJSON_AddStringToObject(root, "error", esp_err_to_name(err));
+    }
+    char *json = cJSON_PrintUnformatted(root);
+    cJSON_Delete(root);
+    if (!json) {
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "json");
+        return ESP_FAIL;
+    }
+    httpd_resp_set_type(req, "application/json");
+    if (err != ESP_OK) {
+        httpd_resp_set_status(req, "500 Internal Server Error");
+    }
+    err = httpd_resp_sendstr(req, json);
+    free(json);
+    return err;
+#endif
+}
+
+static esp_err_t handler_adc_tk64(httpd_req_t *req)
+{
+    int mv = ir_raw_read_mv();
+    cJSON *root = cJSON_CreateObject();
+    cJSON_AddBoolToObject(root, "ok", mv >= 0);
+    cJSON_AddNumberToObject(root, "gpio", 34);
+    cJSON_AddNumberToObject(root, "mv", (double)mv);
+    char *json = cJSON_PrintUnformatted(root);
+    cJSON_Delete(root);
+    if (!json) {
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "json");
+        return ESP_FAIL;
+    }
+    httpd_resp_set_type(req, "application/json");
+    esp_err_t err = httpd_resp_sendstr(req, json);
+    free(json);
+    return err;
+}
+
 static esp_err_t handler_devices(httpd_req_t *req)
 {
     char *json = catalog_list_json();
@@ -428,6 +494,15 @@ static esp_err_t handler_learn(httpd_req_t *req)
     cJSON_Delete(parsed);
     cJSON_AddBoolToObject(code, "ok", true);
     cJSON_AddBoolToObject(code, "saved", saved);
+    ir_raw_stats_t st;
+    ir_raw_get_stats(&st);
+    cJSON *raw = cJSON_CreateObject();
+    cJSON_AddNumberToObject(raw, "gpio", 34);
+    cJSON_AddNumberToObject(raw, "min_mv", (double)st.min_mv);
+    cJSON_AddNumberToObject(raw, "max_mv", (double)st.max_mv);
+    cJSON_AddNumberToObject(raw, "mean_mv", (double)st.mean_mv);
+    cJSON_AddNumberToObject(raw, "n", (double)st.n);
+    cJSON_AddItemToObject(code, "tk64", raw);
     char *json = cJSON_PrintUnformatted(code);
     cJSON_Delete(code);
     if (!json) {
@@ -768,6 +843,9 @@ static esp_err_t start_http(void)
         { .uri = "/", .method = HTTP_GET, .handler = handler_root },
         { .uri = "/status", .method = HTTP_GET, .handler = handler_status },
         { .uri = "/health", .method = HTTP_GET, .handler = handler_health },
+        { .uri = "/adc/led", .method = HTTP_GET, .handler = handler_adc_led },
+        { .uri = "/adc/led", .method = HTTP_POST, .handler = handler_adc_led },
+        { .uri = "/adc/tk64", .method = HTTP_GET, .handler = handler_adc_tk64 },
         { .uri = "/devices", .method = HTTP_GET, .handler = handler_devices },
         { .uri = "/commands", .method = HTTP_GET, .handler = handler_devices },
         { .uri = "/commands", .method = HTTP_PUT, .handler = handler_put_command },

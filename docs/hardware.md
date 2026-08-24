@@ -8,11 +8,11 @@ console. IR LED is driven from **5 V**, not the 3.3 V rail.
 
 | Function | GPIO | Notes |
 |----------|------|--------|
-| IR transmit (RMT) | **18** | Active high → transistor on → LED on |
+| IR transmit (RMT) / TK16 | **18** | Active high → transistor on → LED on; LED from **5 V** |
 | Status LED | **2** | Onboard LED on many DevKits; on during TX |
 | Button | **0** | BOOT button after boot sends `demo/power` |
-| IR receive (TSOP) | **19** | 38 kHz demodulator, idle HIGH; next to GPIO 18 |
-| Raw photodiode (future) | 34/35 | Input-only; unused in v0 |
+| IR receive (TK15 / TSOP) | **19** | 38 kHz demodulator, idle HIGH; **3.3 V** |
+| Raw IR (TK64 phototransistor) | **34** | ADC1; no demod. **3.3 V**. Compare against TK15 |
 
 Override `IR_TX_GPIO` at compile time if the wiring differs.
 

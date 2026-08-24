@@ -16,6 +16,8 @@
 #include "catalog.h"
 #include "ir_tx.h"
 #include "ir_rx.h"
+#include "led_sense.h"
+#include "ir_raw.h"
 #include "net_ctrl.h"
 
 #include "driver/gpio.h"
@@ -232,6 +234,10 @@ void app_main(void)
 #endif
 #if IR_RX_ENABLE
     ESP_ERROR_CHECK(ir_rx_init());
+#endif
+    ESP_ERROR_CHECK(ir_raw_init());
+#if IR_TX_ENABLE
+    ESP_ERROR_CHECK(led_sense_init());
 #endif
     ESP_ERROR_CHECK(catalog_init());
 

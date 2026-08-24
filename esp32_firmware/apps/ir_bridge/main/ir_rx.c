@@ -1,4 +1,5 @@
 #include "ir_rx.h"
+#include "ir_raw.h"
 #include "board.h"
 
 #include "driver/rmt_rx.h"
@@ -194,9 +195,25 @@ static void rx_task(void *arg)
         fr.n_timings = symbols_to_timings(ed.received_symbols, ed.num_symbols,
                                           fr.timings, IR_RX_MAX_TIMINGS);
         try_decode(&fr);
-        ESP_LOGI(TAG, "rx proto=%s addr=%lu cmd=%lu bits=%d n=%u",
-                 fr.protocol, (unsigned long)fr.address, (unsigned long)fr.command,
-                 fr.bits, (unsigned)fr.n_timings);
+        {
+            char msg[2048];
+            int n = snprintf(msg, sizeof(msg),
+                             "IRMSG proto=%s addr=%lu cmd=%lu bits=%d n=%u timings=",
+                             fr.protocol,
+                             (unsigned long)fr.address,
+                             (unsigned long)fr.command,
+                             fr.bits,
+                             (unsigned)fr.n_timings);
+            for (size_t i = 0; i < fr.n_timings && n > 0 && n < (int)sizeof(msg) - 8; i++) {
+                int w = snprintf(msg + n, sizeof(msg) - (size_t)n, "%s%u",
+                                 i ? "," : "", (unsigned)fr.timings[i]);
+                if (w < 0) {
+                    break;
+                }
+                n += w;
+            }
+            ESP_LOGI(TAG, "%s", msg);
+        }
         xQueueOverwrite(s_frames, &fr);
     }
 }
@@ -247,8 +264,18 @@ esp_err_t ir_rx_learn(int timeout_ms, ir_frame_t *out)
     while (xQueueReceive(s_frames, &dump, 0) == pdTRUE) {
         /* drain stale frames */
     }
-    if (xQueueReceive(s_frames, out, pdMS_TO_TICKS(timeout_ms)) != pdTRUE) {
-        return ESP_ERR_TIMEOUT;
+    ir_raw_reset_stats();
+    TickType_t deadline = xTaskGetTickCount() + pdMS_TO_TICKS(timeout_ms);
+    while (xQueueReceive(s_frames, out, pdMS_TO_TICKS(5)) != pdTRUE) {
+        ir_raw_poll();
+        if ((int32_t)(xTaskGetTickCount() - deadline) >= 0) {
+            return ESP_ERR_TIMEOUT;
+        }
+    }
+    /* A few extra TK64 samples while the burst is still in the air. */
+    for (int i = 0; i < 30; i++) {
+        ir_raw_poll();
+        vTaskDelay(1);
     }
     return ESP_OK;
 }

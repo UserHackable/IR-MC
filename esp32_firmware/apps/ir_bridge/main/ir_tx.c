@@ -5,6 +5,8 @@
 #include "driver/rmt_encoder.h"
 #include "driver/rmt_tx.h"
 #include "esp_log.h"
+#include "esp_rom_gpio.h"
+#include "soc/gpio_sig_map.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 
@@ -148,6 +150,63 @@ esp_err_t ir_tx_init(void)
 
     ESP_LOGI(TAG, "RMT TX on GPIO%d, 1 us/tick", (int)IR_TX_GPIO);
     return ESP_OK;
+}
+
+esp_err_t ir_tx_dc_begin(void)
+{
+    if (!s_lock || !s_chan) {
+        return ESP_ERR_INVALID_STATE;
+    }
+    if (xSemaphoreTake(s_lock, pdMS_TO_TICKS(2000)) != pdTRUE) {
+        return ESP_ERR_TIMEOUT;
+    }
+    esp_err_t err = rmt_disable(s_chan);
+    if (err != ESP_OK) {
+        xSemaphoreGive(s_lock);
+        return err;
+    }
+    /* Drive the pad from the GPIO out register, not RMT. Do not gpio_reset_pin:
+     * that enables a pull-up and leaves the transistor on. */
+    gpio_set_direction(IR_TX_GPIO, GPIO_MODE_OUTPUT);
+    gpio_set_pull_mode(IR_TX_GPIO, GPIO_FLOATING);
+    esp_rom_gpio_connect_out_signal(IR_TX_GPIO, SIG_GPIO_OUT_IDX, false, false);
+    gpio_set_level(IR_TX_GPIO, 0);
+    led_set(0);
+    return ESP_OK;
+}
+
+void ir_tx_dc_set(int on)
+{
+    gpio_set_level(IR_TX_GPIO, on ? 1 : 0);
+    led_set(on);
+}
+
+esp_err_t ir_tx_dc_end(void)
+{
+    gpio_set_level(IR_TX_GPIO, 0);
+    led_set(0);
+    gpio_set_pull_mode(IR_TX_GPIO, GPIO_FLOATING);
+    /* First TX channel is 0 on this app. Idle level is 0 (LED off). */
+    esp_rom_gpio_connect_out_signal(IR_TX_GPIO, RMT_SIG_OUT0_IDX, false, false);
+    esp_err_t err = rmt_enable(s_chan);
+    if (err == ESP_OK && s_encoder) {
+        rmt_symbol_word_t idle = {
+            .duration0 = 2,
+            .level0 = 0,
+            .duration1 = 2,
+            .level1 = 0,
+        };
+        rmt_transmit_config_t tx_cfg = {
+            .loop_count = 0,
+            .flags.eot_level = 0,
+        };
+        (void)rmt_transmit(s_chan, s_encoder, &idle, sizeof(idle), &tx_cfg);
+        (void)rmt_tx_wait_all_done(s_chan, pdMS_TO_TICKS(50));
+    }
+    if (s_lock) {
+        xSemaphoreGive(s_lock);
+    }
+    return err;
 }
 
 esp_err_t ir_tx_send_raw(uint32_t freq_hz, const uint16_t *timings, size_t count,
