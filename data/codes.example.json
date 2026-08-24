@@ -1,0 +1,35 @@
+{
+  "devices": {
+    "demo": {
+      "power": {
+        "protocol": "nec",
+        "address": 4,
+        "command": 8,
+        "freq": 38000,
+        "repeat": 2
+      },
+      "vol_up": {
+        "protocol": "nec",
+        "address": 4,
+        "command": 2,
+        "freq": 38000
+      },
+      "vol_down": {
+        "protocol": "nec",
+        "address": 4,
+        "command": 3,
+        "freq": 38000
+      }
+    },
+    "tv": {
+      "power": {
+        "protocol": "nec",
+        "address": 4,
+        "command": 8,
+        "freq": 38000,
+        "repeat": 2,
+        "_comment": "Replace address/command with codes from your TV remote"
+      }
+    }
+  }
+}

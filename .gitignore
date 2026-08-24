@@ -1,0 +1,40 @@
+# --- Secrets (never commit) -------------------------------------------------
+known_wifi.yaml
+secrets/**
+!secrets/README.md
+!secrets/*.example
+!secrets/*.example.*
+
+**/wifi_credentials.generated.h
+secrets/generated/
+*.nvs.bin
+
+# Arduino sketch local secrets
+arduino_test_firmware/**/secrets.h
+
+# --- Build / flash artifacts ------------------------------------------------
+esp32_firmware/apps/*/build/
+esp32_firmware/apps/*/sdkconfig
+esp32_firmware/apps/*/sdkconfig.old
+esp32_firmware/apps/*/dependencies.lock
+esp32_firmware/apps/*/managed_components/
+*.bin
+*.elf
+*.map
+*.hex
+
+# Editor / OS junk
+*~
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+
+# Local captures
+tmp/

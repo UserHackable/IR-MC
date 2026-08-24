@@ -1,0 +1,105 @@
+#!/usr/bin/env bash
+# Firmware CLI for IR-MC (classic ESP32 IR transceiver).
+#
+# ESP-IDF (multi-app under esp32_firmware/apps/):
+#   ./scripts/fw idf list
+#   ./scripts/fw idf install
+#   ./scripts/fw idf build  <app>
+#   ./scripts/fw idf flash  <app>
+#   ./scripts/fw idf upload <app>     # build + flash
+#   ./scripts/fw idf monitor <app>
+#   ./scripts/fw idf nvs-wifi         # provision secrets/wifi.yaml (+ mqtt.yaml if present)
+#
+#   ./scripts/fw port
+#
+# Examples:
+#   ./scripts/fw idf upload ir_bridge
+#   ./scripts/fw idf monitor ir_bridge
+
+set -euo pipefail
+
+REPO="$(cd "$(dirname "$0")/.." && pwd)"
+IDF_ROOT="$REPO/esp32_firmware"
+IDF_APPS="$IDF_ROOT/apps"
+
+usage() {
+  sed -n '2,20p' "$0" | sed 's/^# \?//'
+  exit "${1:-0}"
+}
+
+die() { echo "error: $*" >&2; exit 1; }
+
+# --- ESP-IDF ------------------------------------------------------------------
+
+idf_list_apps() {
+  local d name
+  shopt -s nullglob
+  for d in "$IDF_APPS"/*/; do
+    name=$(basename "$d")
+    [[ -f "$d/CMakeLists.txt" ]] && printf '%s\n' "$name"
+  done
+  shopt -u nullglob
+}
+
+idf_resolve_app() {
+  local app="${1:-${APP:-}}"
+  if [[ -z "$app" ]]; then
+    echo "error: idf app name required" >&2
+    echo "available:" >&2
+    idf_list_apps | sed 's/^/  /' >&2
+    exit 1
+  fi
+  if [[ ! -f "$IDF_APPS/$app/CMakeLists.txt" ]]; then
+    echo "error: unknown app '$app'" >&2
+    echo "available:" >&2
+    idf_list_apps | sed 's/^/  /' >&2
+    exit 1
+  fi
+  printf '%s\n' "$app"
+}
+
+cmd_idf() {
+  local sub="${1:-}"
+  shift || true
+  local app
+
+  case "$sub" in
+    ""|-h|--help) usage ;;
+    list|ls) idf_list_apps ;;
+    install) "$IDF_ROOT/scripts/install-idf.sh" ;;
+    build|compile)
+      app=$(idf_resolve_app "${1:-}")
+      APP="$app" "$IDF_ROOT/scripts/build.sh" "$app"
+      ;;
+    flash)
+      app=$(idf_resolve_app "${1:-}")
+      APP="$app" "$IDF_ROOT/scripts/flash.sh" "$app"
+      ;;
+    upload|run)
+      app=$(idf_resolve_app "${1:-}")
+      APP="$app" "$IDF_ROOT/scripts/build.sh" "$app"
+      APP="$app" "$IDF_ROOT/scripts/flash.sh" "$app"
+      echo "OK: idf app=$app build+flash done"
+      ;;
+    monitor|serial)
+      app=$(idf_resolve_app "${1:-}")
+      APP="$app" "$IDF_ROOT/scripts/monitor.sh" "$app"
+      ;;
+    nvs-wifi|provision-wifi)
+      "$REPO/scripts/nvs-wifi-provision.sh" "$@"
+      ;;
+    *) die "unknown idf subcommand: $sub (list install build flash upload monitor nvs-wifi)" ;;
+  esac
+}
+
+# --- main ---------------------------------------------------------------------
+
+tool="${1:-}"
+shift || true
+
+case "$tool" in
+  ""|-h|--help) usage ;;
+  idf|esp-idf|native) cmd_idf "$@" ;;
+  port|detect-port) "$REPO/scripts/detect-esp-port.sh" "$@" ;;
+  *) die "unknown tool: $tool (try: idf | port)" ;;
+esac

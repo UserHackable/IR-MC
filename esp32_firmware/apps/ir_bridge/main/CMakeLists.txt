@@ -1,0 +1,22 @@
+idf_component_register(
+  SRCS
+    "main.c"
+    "ir_tx.c"
+    "ir_rx.c"
+    "catalog.c"
+    "net_ctrl.c"
+  INCLUDE_DIRS "."
+  PRIV_REQUIRES
+    nvs_flash
+    esp_event
+    esp_netif
+    esp_wifi
+    esp_http_server
+    esp_timer
+    driver
+    mqtt
+    json
+    spiffs
+    vfs
+    lwip
+)

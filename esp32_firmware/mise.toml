@@ -1,0 +1,4 @@
+# Host tools for ESP-IDF builds (cmake/ninja). IDF itself lives in ~/esp/esp-idf.
+[tools]
+cmake = "4.3.3"
+ninja = "1.13.2"
