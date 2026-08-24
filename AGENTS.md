@@ -46,12 +46,15 @@ HTTP is for testing and clients without a broker.
 | Setting | Value |
 |---------|-------|
 | Default branch | `master` |
-| Canonical remote | `github` → `git@github.com:UserHackable/IR-MC.git` |
+| Canonical remote | `gluttony` → `git@gluttony:UserHackable/IR-MC.git` |
+| Mirror remote | `github` → `git@github.com:UserHackable/IR-MC.git` |
 | Mirror remote | `gitlab` → `git@gitlab.com:user-hackable/IR-MC.git` |
 
-Dual-push after meaningful shared work:
+Push after meaningful shared work:
 
 ```bash
+git push gluttony
+# when the GitHub/GitLab remotes exist:
 git push github && git push gitlab
 ```
 
@@ -59,10 +62,10 @@ git push github && git push gitlab
 
 | Phrase | Means |
 |--------|--------|
-| **send it** | Commit if needed (only when asked to commit), then **dual-push** `github` and `gitlab`. |
+| **send it** | Commit if needed (only when asked to commit), then push **`gluttony`** (and GitHub/GitLab when those remotes exist). |
 | **ship it** / **cut a release** | Same as **send it** until a release doc exists. |
 
-**Push policy:** Do **not** push unless the user says **send it** (or **ship it** / **cut a release**).
+**Push policy:** Do **not** push unless the user says **send it** (or **ship it** / **cut a release**), or otherwise asks to push.
 
 Never force-push `master` unless the user explicitly asks.
 

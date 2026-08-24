@@ -114,8 +114,9 @@ IR-MC/
 
 | Remote | URL | Role |
 |--------|-----|------|
-| `github` | `git@github.com:UserHackable/IR-MC.git` | Canonical (when created) |
+| `gluttony` | `git@gluttony:UserHackable/IR-MC.git` | Canonical (LAN) |
+| `github` | `git@github.com:UserHackable/IR-MC.git` | Mirror (when created) |
 | `gitlab` | `git@gitlab.com:user-hackable/IR-MC.git` | Mirror |
 
-**send it** (agent phrase): commit if needed, then dual-push `github` and `gitlab`
-(see [AGENTS.md](AGENTS.md)).
+**send it** (agent phrase): commit if needed, then push `gluttony` (and GitHub/GitLab
+when those remotes exist). See [AGENTS.md](AGENTS.md).

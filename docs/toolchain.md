@@ -27,20 +27,22 @@ Apps: `ir_bridge` (TX+RX), `ir_listen` (RX-only), `ir_blast` (TX-only).
 
 ## Build host (Haruna)
 
-The **listen** module is USB-serial on **Haruna** (`192.168.72.3`, SSH `haruna`).
-Prefer building and flashing `ir_listen` there:
+Both the **listen** and **blast** modules are USB-serial on **Haruna**
+(`192.168.72.3`, SSH `haruna`). Build and flash there:
 
 ```bash
 ssh haruna
 cd ~/User-Hackable/IR-MC
-./scripts/fw idf upload ir_listen
+./scripts/fw idf upload ir_listen   # GPIO19 TSOP
+./scripts/fw idf upload ir_blast    # GPIO18 LED
 ./scripts/fw idf nvs-wifi
 ```
 
-Serial is `/dev/ttyUSB0` (group `uucp`). ESP-IDF lives at `~/esp/esp-idf`
-(v5.3.2), same path as other UserHackable ESP32 machines.
+Override the port when more than one adapter is present:
+`PORT=/dev/ttyUSB1 ./scripts/fw idf upload ir_blast`.
 
-The **blast** module is usually on the workstation USB; flash `ir_blast` there.
+Serial devices are in group `uucp`. ESP-IDF lives at `~/esp/esp-idf`
+(v5.3.2), same path as other UserHackable ESP32 machines.
 
 ## Layout
 
