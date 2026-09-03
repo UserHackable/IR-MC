@@ -25,6 +25,9 @@ idf_component_register(
     spiffs
     vfs
     lwip
+  EMBED_TXTFILES
+    "${SHARED}/www/remote.html"
+    "${SHARED}/www/lab.html"
 )
 
 target_compile_definitions(${COMPONENT_LIB} PRIVATE

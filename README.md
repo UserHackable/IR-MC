@@ -34,7 +34,7 @@ Living spec: [ESP32-IR-Remote-Bridge.md](ESP32-IR-Remote-Bridge.md).
 ## Status
 
 Firmware compiles against ESP-IDF 5.3.x. The live bench board is on **Haruna**
-(`ir-mc-582abd78af4c`, `192.168.72.143`): TK16 TX on GPIO18, TK15 learn on
+(`ir` / `ir.lan` / `ir-mc-582abd78af4c`, `192.168.72.20`): TK16 TX on GPIO18, TK15 learn on
 GPIO19, TK64 analog on GPIO34. Sceptre is Sony 12-bit addr 1: vol± 18/19,
 power **toggle 21**. See [docs/STATUS.md](docs/STATUS.md).
 
@@ -60,7 +60,8 @@ cp secrets/mqtt.yaml.example secrets/mqtt.yaml   # optional local broker
 ./scripts/fw idf nvs-wifi
 ./scripts/fw idf upload ir_bridge
 ./scripts/fw idf monitor ir_bridge
-# then open http://<ip>:8080/
+# then open http://<ip>/          # phone remotes
+#          http://<ip>/lab      # learn / raw / ADC
 ```
 
 Port override: `PORT=/dev/ttyUSB0 ./scripts/fw idf upload ir_bridge`.
@@ -69,7 +70,7 @@ Wire GPIO18 through a transistor to a 940 nm LED on 5 V. See
 [docs/hardware.md](docs/hardware.md).
 
 ```bash
-curl -X POST http://<ip>:8080/ir/demo/power
+curl -X POST http://<ip>/ir/demo/power
 mosquitto_pub -h <broker> -t ir/demo/power -m ''
 ```
 

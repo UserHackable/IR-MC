@@ -10,11 +10,14 @@
 #include "cJSON.h"
 #include "esp_http_server.h"
 #include "esp_log.h"
+#include "esp_netif.h"
+#include "esp_system.h"
 #include "esp_timer.h"
 #include "mqtt_client.h"
 #include "nvs.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
+#include "freertos/task.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -29,6 +32,11 @@ static const char *TAG = "net_ctrl";
 #define NVS_KEY_USER     "username"
 #define NVS_KEY_PASS     "password"
 #define NVS_KEY_PREFIX   "prefix"
+#define NVS_NS_WIFI      "wifi"
+#define NVS_KEY_HOSTNAME "hostname"
+#define NVS_KEY_IP       "ip"
+#define NVS_KEY_GW       "gateway"
+#define NVS_KEY_MASK     "netmask"
 #define BODY_MAX         8192
 #define PREFIX_MAX       32
 
@@ -41,68 +49,21 @@ static char s_mqtt_pass[64];
 static char s_prefix[PREFIX_MAX] = "ir";
 static int s_mqtt_connected;
 
-static const char k_index_html[] =
-    "<!doctype html><meta charset=utf-8>"
-    "<meta name=viewport content=\"width=device-width,initial-scale=1\">"
-#if IR_TX_ENABLE && IR_RX_ENABLE
-    "<title>IR-MC</title>"
-#elif IR_TX_ENABLE
-    "<title>IR-MC blast</title>"
-#else
-    "<title>IR-MC listen</title>"
-#endif
-    "<style>"
-    "body{font-family:system-ui,sans-serif;max-width:42rem;margin:1.5rem auto;padding:0 1rem}"
-    "button{margin:.2rem;padding:.4rem .7rem}"
-    "pre{background:#f4f4f4;padding:.5rem;overflow:auto}"
-    "textarea{width:100%;font-family:monospace}"
-    "section{margin:1.5rem 0;padding:1rem 0;border-top:1px solid #ddd}"
-    "</style>"
-#if IR_TX_ENABLE && IR_RX_ENABLE
-    "<h1>IR-MC</h1>"
-#elif IR_TX_ENABLE
-    "<h1>IR-MC blast</h1><p>Transmit only (GPIO18). Receive is disabled on this module.</p>"
-#else
-    "<h1>IR-MC listen</h1><p>Receive only (GPIO19). Transmit is disabled on this module.</p>"
-#endif
-    "<p id=st>loading…</p>"
-    "<section><h2>Named commands</h2><div id=cmds></div></section>"
-#if IR_RX_ENABLE
-    "<section><h2>Learn from remote</h2>"
-    "<p>Point the remote at the TSOP on GPIO19 and press one button.</p>"
-    "<p>device <input id=ld value=sceptre size=10> command <input id=lc value=power size=10>"
-    "<button onclick=\"learn()\">Learn (8s)</button></p></section>"
-#endif
-#if IR_TX_ENABLE
-    "<section><h2>Send raw</h2>"
-    "<textarea id=raw rows=6>{ \"freq\": 38000, \"timings\": [9000,4500,560,1690,560,560], \"repeat\": 1 }</textarea>"
-    "<p><button onclick=\"sendRaw()\">Send raw</button></p></section>"
-    "<section><h2>LED anode sense</h2>"
-    "<p>GPIO18 DC on/off, ADC1_CH4 on silk 32 (÷2 divider tap). Estimates LED+ as 2×.</p>"
-    "<p><button onclick=\"post('/adc/led')\">Measure</button></p></section>"
-#endif
-    "<pre id=log></pre>"
-    "<script>"
-    "async function st(){const r=await fetch('/status');const j=await r.json();"
-    "document.getElementById('st').textContent=j.identity+' · '+j.ip+' · v'+j.version+"
-    "' · mqtt '+(j.mqtt&&j.mqtt.connected?'up':'down');}"
-    "async function load(){const r=await fetch('/devices');const j=await r.json();"
-    "const el=document.getElementById('cmds');el.innerHTML='';"
-    "const devs=j.devices||{};"
-    "for(const d of Object.keys(devs)){const h=document.createElement('h3');h.textContent=d;el.appendChild(h);"
-    "for(const c of Object.keys(devs[d])){const b=document.createElement('button');b.textContent=c;"
-    "b.onclick=()=>post('/ir/'+d+'/'+c);el.appendChild(b);}}}"
-    "async function post(url,body){const r=await fetch(url,{method:'POST',"
-    "headers:{'content-type':'application/json'},body:body?JSON.stringify(body):'{}'});"
-    "document.getElementById('log').textContent=await r.text();}"
-    "function sendRaw(){post('/ir/send',JSON.parse(document.getElementById('raw').value));}"
-    "async function learn(){document.getElementById('log').textContent='listening… press the remote';"
-    "const body={timeout_ms:8000,device:document.getElementById('ld').value,"
-    "command:document.getElementById('lc').value};"
-    "const r=await fetch('/ir/learn',{method:'POST',headers:{'content-type':'application/json'},"
-    "body:JSON.stringify(body)}); document.getElementById('log').textContent=await r.text(); load();}"
-    "st();load();"
-    "</script>";
+extern const uint8_t remote_html_start[] asm("_binary_remote_html_start");
+extern const uint8_t remote_html_end[] asm("_binary_remote_html_end");
+extern const uint8_t lab_html_start[] asm("_binary_lab_html_start");
+extern const uint8_t lab_html_end[] asm("_binary_lab_html_end");
+
+static esp_err_t send_embedded(httpd_req_t *req, const uint8_t *start, const uint8_t *end)
+{
+    httpd_resp_set_type(req, "text/html; charset=utf-8");
+    httpd_resp_set_hdr(req, "Cache-Control", "no-cache");
+    ssize_t n = (ssize_t)(end - start);
+    if (n > 0 && start[n - 1] == 0) {
+        n--;
+    }
+    return httpd_resp_send(req, (const char *)start, n);
+}
 
 static int64_t uptime_s(void)
 {
@@ -119,6 +80,7 @@ static void publish_status(int retain)
     cJSON_AddStringToObject(root, "role", ROLE);
     cJSON_AddStringToObject(root, "identity", g_identity);
     cJSON_AddStringToObject(root, "ip", g_ip_str[0] ? g_ip_str : "");
+    cJSON_AddStringToObject(root, "hostname", g_hostname[0] ? g_hostname : g_identity);
     cJSON_AddStringToObject(root, "app", APP_NAME);
     cJSON_AddStringToObject(root, "version", APP_VERSION);
     cJSON_AddNumberToObject(root, "uptime_s", (double)uptime_s());
@@ -287,6 +249,7 @@ static cJSON *status_json(void)
     cJSON_AddStringToObject(root, "role", ROLE);
     cJSON_AddStringToObject(root, "identity", g_identity);
     cJSON_AddStringToObject(root, "ip", g_ip_str[0] ? g_ip_str : "");
+    cJSON_AddStringToObject(root, "hostname", g_hostname[0] ? g_hostname : g_identity);
     cJSON_AddStringToObject(root, "app", APP_NAME);
     cJSON_AddStringToObject(root, "version", APP_VERSION);
     cJSON_AddNumberToObject(root, "uptime_s", (double)uptime_s());
@@ -294,6 +257,9 @@ static cJSON *status_json(void)
     cJSON_AddStringToObject(root, "prefix", s_prefix);
     cJSON_AddBoolToObject(root, "tx", IR_TX_ENABLE);
     cJSON_AddBoolToObject(root, "rx", IR_RX_ENABLE);
+#if IR_TX_ENABLE
+    cJSON_AddNumberToObject(root, "tx_duty", (double)ir_tx_get_duty());
+#endif
 
     cJSON *mqtt = cJSON_CreateObject();
     cJSON_AddBoolToObject(mqtt, "configured", s_mqtt_uri[0] != 0);
@@ -305,8 +271,12 @@ static cJSON *status_json(void)
 
 static esp_err_t handler_root(httpd_req_t *req)
 {
-    httpd_resp_set_type(req, "text/html");
-    return httpd_resp_send(req, k_index_html, HTTPD_RESP_USE_STRLEN);
+    return send_embedded(req, remote_html_start, remote_html_end);
+}
+
+static esp_err_t handler_lab(httpd_req_t *req)
+{
+    return send_embedded(req, lab_html_start, lab_html_end);
 }
 
 static esp_err_t handler_status(httpd_req_t *req)
@@ -516,6 +486,200 @@ static esp_err_t handler_learn(httpd_req_t *req)
 #endif
 }
 
+#define ECHO_MAX 8
+
+static int frame_glue_kind(const ir_frame_t *f)
+{
+    if (f->n_timings >= 100) {
+        return 2; /* jammed: RMT RX buffer filled by a run-on burst */
+    }
+    /* A space longer than 8 ms after the header means two frames were glued
+     * (the TV's demodulator is seeing the same blob). NEC/Samsung headers are
+     * only the first two timings. */
+    for (size_t i = 2; i < f->n_timings; i++) {
+        if (f->timings[i] >= 8000) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static cJSON *run_tx_with_sensors(cJSON *parsed, const char *fb_dev, const char *fb_cmd,
+                                  char *dev, size_t dlen, char *cmdn, size_t clen,
+                                  int64_t *ms_out, esp_err_t *err_out)
+{
+    ir_rx_drain();
+    ir_raw_reset_stats();
+    int idle_mv = ir_raw_read_mv();
+    ir_raw_poll();
+
+    float duty_used = ir_tx_get_duty();
+    if (cJSON_IsObject(parsed)) {
+        const cJSON *d = cJSON_GetObjectItemCaseSensitive(parsed, "duty");
+        if (cJSON_IsNumber(d)) {
+            duty_used = (float)d->valuedouble;
+            if (duty_used < 0.05f) {
+                duty_used = 0.05f;
+            }
+            if (duty_used > 0.50f) {
+                duty_used = 0.50f;
+            }
+        }
+    }
+
+    int64_t t0 = esp_timer_get_time();
+    esp_err_t err = execute_payload(parsed, fb_dev, fb_cmd, dev, dlen, cmdn, clen, NULL);
+    int64_t ms = (esp_timer_get_time() - t0) / 1000;
+
+    /* Summaries only — a full ir_frame_t is ~1 KB and eight of them blow the
+     * HTTP task's 8 KB stack. */
+    struct {
+        char protocol[16];
+        uint32_t address;
+        uint32_t command;
+        int bits;
+        uint16_t n_timings;
+        uint8_t glue;
+    } echo[ECHO_MAX];
+    size_t n_echo = 0;
+    TickType_t deadline = xTaskGetTickCount() + pdMS_TO_TICKS(60);
+    ir_frame_t *fr = malloc(sizeof(*fr));
+    while (fr && n_echo < ECHO_MAX) {
+        int32_t left_ticks = (int32_t)(deadline - xTaskGetTickCount());
+        int to_ms = left_ticks <= 0 ? 0 : (int)left_ticks * (int)portTICK_PERIOD_MS;
+        if (ir_rx_take(fr, to_ms) != ESP_OK) {
+            if (left_ticks <= 0) {
+                break;
+            }
+            continue;
+        }
+        if (fr->n_timings < 8) {
+            continue; /* leftover mark/space, not a frame */
+        }
+        snprintf(echo[n_echo].protocol, sizeof(echo[n_echo].protocol), "%s", fr->protocol);
+        echo[n_echo].address = fr->address;
+        echo[n_echo].command = fr->command;
+        echo[n_echo].bits = fr->bits;
+        echo[n_echo].n_timings = (uint16_t)fr->n_timings;
+        echo[n_echo].glue = (uint8_t)frame_glue_kind(fr);
+        n_echo++;
+    }
+    free(fr);
+
+    ir_raw_stats_t st;
+    ir_raw_get_stats(&st);
+
+    const char *expect_proto = "";
+    uint32_t expect_addr = 0, expect_cmd = 0;
+    int expect = 0;
+    if (cJSON_IsObject(parsed)) {
+        const cJSON *p = cJSON_GetObjectItemCaseSensitive(parsed, "protocol");
+        const cJSON *a = cJSON_GetObjectItemCaseSensitive(parsed, "address");
+        const cJSON *c = cJSON_GetObjectItemCaseSensitive(parsed, "command");
+        if (cJSON_IsString(p) && p->valuestring && strcasecmp(p->valuestring, "raw") != 0 &&
+            cJSON_IsNumber(a) && cJSON_IsNumber(c)) {
+            expect_proto = p->valuestring;
+            expect_addr = (uint32_t)a->valuedouble;
+            expect_cmd = (uint32_t)c->valuedouble;
+            expect = 1;
+        }
+    }
+    const char *quality = "no_echo";
+    if (n_echo > 0) {
+        int jammed = 0, glued = 0, decoded = 0, matched = 0;
+        for (size_t i = 0; i < n_echo; i++) {
+            if (echo[i].glue == 2) {
+                jammed++;
+            } else if (echo[i].glue == 1) {
+                glued++;
+            }
+            if (strcasecmp(echo[i].protocol, "raw") != 0) {
+                decoded++;
+                if (expect && strcasecmp(echo[i].protocol, expect_proto) == 0 &&
+                    echo[i].address == expect_addr && echo[i].command == expect_cmd) {
+                    matched++;
+                }
+            }
+        }
+        if (jammed) {
+            quality = "jammed";
+        } else if (glued) {
+            quality = "glued";
+        } else if (decoded == 0 || (expect && matched == 0)) {
+            quality = "distorted";
+        } else {
+            quality = "clean";
+        }
+    }
+
+    cJSON *root = cJSON_CreateObject();
+    cJSON_AddBoolToObject(root, "ok", err == ESP_OK);
+    if (dev && dev[0]) {
+        cJSON_AddStringToObject(root, "device", dev);
+    }
+    if (cmdn && cmdn[0]) {
+        cJSON_AddStringToObject(root, "command", cmdn);
+    }
+    cJSON_AddNumberToObject(root, "ms", (double)ms);
+    cJSON_AddNumberToObject(root, "duty", (double)duty_used);
+    if (err != ESP_OK) {
+        cJSON_AddStringToObject(root, "error", esp_err_to_name(err));
+    }
+    cJSON_AddStringToObject(root, "echo_quality", quality);
+    if (n_echo > 0) {
+        cJSON_AddBoolToObject(root, "too_close",
+                              strcmp(quality, "clean") != 0);
+    }
+
+    cJSON *arr = cJSON_CreateArray();
+    for (size_t i = 0; i < n_echo; i++) {
+        cJSON *fr = cJSON_CreateObject();
+        cJSON_AddStringToObject(fr, "protocol", echo[i].protocol);
+        cJSON_AddNumberToObject(fr, "address", (double)echo[i].address);
+        cJSON_AddNumberToObject(fr, "command", (double)echo[i].command);
+        cJSON_AddNumberToObject(fr, "bits", echo[i].bits);
+        cJSON_AddNumberToObject(fr, "n", (double)echo[i].n_timings);
+        cJSON_AddItemToArray(arr, fr);
+    }
+    cJSON_AddItemToObject(root, "echo", arr);
+
+    cJSON *raw = cJSON_CreateObject();
+    cJSON_AddNumberToObject(raw, "gpio", 34);
+    cJSON_AddNumberToObject(raw, "idle_mv", (double)idle_mv);
+    cJSON_AddNumberToObject(raw, "min_mv", (double)st.min_mv);
+    cJSON_AddNumberToObject(raw, "max_mv", (double)st.max_mv);
+    cJSON_AddNumberToObject(raw, "mean_mv", (double)st.mean_mv);
+    cJSON_AddNumberToObject(raw, "n", (double)st.n);
+    int tk64_dead = (st.n <= 1) || (st.min_mv == st.max_mv && st.min_mv == idle_mv);
+    cJSON_AddBoolToObject(raw, "no_swing", tk64_dead);
+    cJSON_AddItemToObject(root, "tk64", raw);
+
+    if (ms_out) {
+        *ms_out = ms;
+    }
+    if (err_out) {
+        *err_out = err;
+    }
+    return root;
+}
+
+static esp_err_t send_json_obj(httpd_req_t *req, cJSON *root, esp_err_t err)
+{
+    char *payload = cJSON_PrintUnformatted(root);
+    cJSON_Delete(root);
+    if (!payload) {
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "json");
+        return ESP_FAIL;
+    }
+    httpd_resp_set_type(req, "application/json");
+    if (err != ESP_OK) {
+        httpd_resp_set_status(req, err == ESP_ERR_NOT_FOUND ? "404 Not Found" : "400 Bad Request");
+    }
+    esp_err_t send_err = httpd_resp_sendstr(req, payload);
+    free(payload);
+    return send_err;
+}
+
 static esp_err_t handler_ir(httpd_req_t *req)
 {
 #if !IR_TX_ENABLE
@@ -541,12 +705,106 @@ static esp_err_t handler_ir(httpd_req_t *req)
         }
     }
 
+    int echo = 0;
+    const char *q = strchr(uri, '?');
+    if (q && strstr(q, "echo=1")) {
+        echo = 1;
+    }
+    if (cJSON_IsObject(parsed)) {
+        const cJSON *e = cJSON_GetObjectItemCaseSensitive(parsed, "echo");
+        if (cJSON_IsTrue(e) || (cJSON_IsNumber(e) && e->valueint)) {
+            echo = 1;
+        }
+    }
+
     int64_t ms = 0;
-    esp_err_t err = execute_payload(parsed, device[0] ? device : NULL, command[0] ? command : NULL,
-                                    device, sizeof(device), command, sizeof(command), &ms);
+    esp_err_t err = ESP_OK;
+    if (echo) {
+        cJSON *root = run_tx_with_sensors(parsed, device[0] ? device : NULL, command[0] ? command : NULL,
+                                          device, sizeof(device), command, sizeof(command), &ms, &err);
+        cJSON_Delete(parsed);
+        publish_ack(device, command, err, ms);
+        return send_json_obj(req, root, err);
+    }
+
+    err = execute_payload(parsed, device[0] ? device : NULL, command[0] ? command : NULL,
+                          device, sizeof(device), command, sizeof(command), &ms);
     cJSON_Delete(parsed);
     publish_ack(device, command, err, ms);
     return json_result(req, err, device, command, ms);
+#endif
+}
+
+static esp_err_t handler_duty(httpd_req_t *req)
+{
+#if !IR_TX_ENABLE
+    httpd_resp_set_type(req, "application/json");
+    httpd_resp_set_status(req, "501 Not Implemented");
+    return httpd_resp_sendstr(req, "{\"ok\":false,\"error\":\"this module is receive-only\"}");
+#else
+    if (req->method == HTTP_POST) {
+        char *body = read_body_alloc(req);
+        if (!body) {
+            return ESP_FAIL;
+        }
+        cJSON *parsed = body[0] ? cJSON_Parse(body) : NULL;
+        free(body);
+        const cJSON *d = cJSON_IsObject(parsed) ? cJSON_GetObjectItemCaseSensitive(parsed, "duty") : NULL;
+        if (!cJSON_IsNumber(d)) {
+            cJSON_Delete(parsed);
+            httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "json {\"duty\":0.15} required");
+            return ESP_FAIL;
+        }
+        ir_tx_set_duty((float)d->valuedouble);
+        cJSON_Delete(parsed);
+    }
+    cJSON *root = cJSON_CreateObject();
+    cJSON_AddBoolToObject(root, "ok", true);
+    cJSON_AddNumberToObject(root, "duty", (double)ir_tx_get_duty());
+    return send_json_obj(req, root, ESP_OK);
+#endif
+}
+
+static esp_err_t handler_probe(httpd_req_t *req)
+{
+#if !IR_TX_ENABLE
+    httpd_resp_set_type(req, "application/json");
+    httpd_resp_set_status(req, "501 Not Implemented");
+    return httpd_resp_sendstr(req, "{\"ok\":false,\"error\":\"this module is receive-only\"}");
+#else
+    char *body = read_body_alloc(req);
+    if (!body) {
+        return ESP_FAIL;
+    }
+    cJSON *parsed = body[0] ? cJSON_Parse(body) : NULL;
+    free(body);
+    if (!cJSON_IsObject(parsed)) {
+        cJSON_Delete(parsed);
+        parsed = cJSON_CreateObject();
+    }
+    if (!cJSON_GetObjectItemCaseSensitive(parsed, "protocol") &&
+        !cJSON_GetObjectItemCaseSensitive(parsed, "timings")) {
+        /* Dummy SIRC the Sceptre (addr 1) should ignore. Same modulation the TV
+         * decoder uses, at the same distance as TK15. */
+        cJSON_AddStringToObject(parsed, "protocol", "sony");
+        cJSON_AddNumberToObject(parsed, "address", 31);
+        cJSON_AddNumberToObject(parsed, "command", 0);
+        cJSON_AddNumberToObject(parsed, "bits", 12);
+        cJSON_AddNumberToObject(parsed, "freq", 40000);
+        if (!cJSON_GetObjectItemCaseSensitive(parsed, "repeat")) {
+            cJSON_AddNumberToObject(parsed, "repeat", 3);
+        }
+    }
+    char device[32] = {0};
+    char command[32] = {0};
+    int64_t ms = 0;
+    esp_err_t err = ESP_OK;
+    cJSON *root = run_tx_with_sensors(parsed, NULL, NULL, device, sizeof(device),
+                                      command, sizeof(command), &ms, &err);
+    cJSON_Delete(parsed);
+    cJSON_AddStringToObject(root, "note",
+                            "dummy Sony addr 31; TV should ignore. echo_quality is the close-range proxy.");
+    return send_json_obj(req, root, err);
 #endif
 }
 
@@ -658,6 +916,107 @@ static esp_err_t handler_config_mqtt(httpd_req_t *req)
     }
     mqtt_start_locked();
     return json_result(req, ESP_OK, NULL, NULL, 0);
+}
+
+static int host_ok(const char *s)
+{
+    if (!s || !s[0] || strlen(s) > 31) {
+        return 0;
+    }
+    for (const char *p = s; *p; p++) {
+        if (!((*p >= 'a' && *p <= 'z') || (*p >= 'A' && *p <= 'Z') ||
+              (*p >= '0' && *p <= '9') || *p == '-')) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
+static esp_err_t nvs_set_or_erase(nvs_handle_t h, const char *key, const char *value)
+{
+    if (value && value[0]) {
+        return nvs_set_str(h, key, value);
+    }
+    esp_err_t err = nvs_erase_key(h, key);
+    return (err == ESP_ERR_NVS_NOT_FOUND) ? ESP_OK : err;
+}
+
+static esp_err_t handler_config_net(httpd_req_t *req)
+{
+    char *body = read_body_alloc(req);
+    if (!body) {
+        return ESP_FAIL;
+    }
+    cJSON *parsed = cJSON_Parse(body);
+    free(body);
+    if (!cJSON_IsObject(parsed)) {
+        cJSON_Delete(parsed);
+        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "json object required");
+        return ESP_FAIL;
+    }
+
+    const cJSON *hn = cJSON_GetObjectItemCaseSensitive(parsed, "hostname");
+    const cJSON *ip = cJSON_GetObjectItemCaseSensitive(parsed, "ip");
+    const cJSON *gw = cJSON_GetObjectItemCaseSensitive(parsed, "gateway");
+    const cJSON *mask = cJSON_GetObjectItemCaseSensitive(parsed, "netmask");
+
+    const char *hostname = (cJSON_IsString(hn) && hn->valuestring) ? hn->valuestring : NULL;
+    const char *ip_s = (cJSON_IsString(ip) && ip->valuestring) ? ip->valuestring : NULL;
+    const char *gw_s = (cJSON_IsString(gw) && gw->valuestring) ? gw->valuestring : NULL;
+    const char *mask_s = (cJSON_IsString(mask) && mask->valuestring) ? mask->valuestring : NULL;
+
+    if (hostname && !host_ok(hostname)) {
+        cJSON_Delete(parsed);
+        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "hostname");
+        return ESP_FAIL;
+    }
+
+    esp_ip4_addr_t tmp;
+    if (ip_s && ip_s[0] && esp_netif_str_to_ip4(ip_s, &tmp) != ESP_OK) {
+        cJSON_Delete(parsed);
+        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "ip");
+        return ESP_FAIL;
+    }
+    if (gw_s && gw_s[0] && esp_netif_str_to_ip4(gw_s, &tmp) != ESP_OK) {
+        cJSON_Delete(parsed);
+        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "gateway");
+        return ESP_FAIL;
+    }
+    if (mask_s && mask_s[0] && esp_netif_str_to_ip4(mask_s, &tmp) != ESP_OK) {
+        cJSON_Delete(parsed);
+        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "netmask");
+        return ESP_FAIL;
+    }
+
+    nvs_handle_t h;
+    esp_err_t err = nvs_open(NVS_NS_WIFI, NVS_READWRITE, &h);
+    if (err != ESP_OK) {
+        cJSON_Delete(parsed);
+        return json_result(req, err, NULL, NULL, 0);
+    }
+    if (hostname) {
+        nvs_set_or_erase(h, NVS_KEY_HOSTNAME, hostname);
+    }
+    if (ip) {
+        nvs_set_or_erase(h, NVS_KEY_IP, ip_s);
+    }
+    if (gw) {
+        nvs_set_or_erase(h, NVS_KEY_GW, gw_s);
+    }
+    if (mask) {
+        nvs_set_or_erase(h, NVS_KEY_MASK, mask_s);
+    }
+    err = nvs_commit(h);
+    nvs_close(h);
+    cJSON_Delete(parsed);
+    if (err != ESP_OK) {
+        return json_result(req, err, NULL, NULL, 0);
+    }
+
+    json_result(req, ESP_OK, NULL, NULL, 0);
+    vTaskDelay(pdMS_TO_TICKS(250));
+    esp_restart();
+    return ESP_OK;
 }
 
 static bool topic_is_self(const char *topic)
@@ -828,8 +1187,8 @@ static esp_err_t start_http(void)
     cfg.server_port = HTTP_PORT;
     cfg.lru_purge_enable = true;
     cfg.uri_match_fn = httpd_uri_match_wildcard;
-    cfg.max_uri_handlers = 20;
-    cfg.stack_size = 8192;
+    cfg.max_uri_handlers = 24;
+    cfg.stack_size = 12288;
     cfg.recv_wait_timeout = 15;
     cfg.send_wait_timeout = 15;
 
@@ -841,6 +1200,7 @@ static esp_err_t start_http(void)
 
     const httpd_uri_t uris[] = {
         { .uri = "/", .method = HTTP_GET, .handler = handler_root },
+        { .uri = "/lab", .method = HTTP_GET, .handler = handler_lab },
         { .uri = "/status", .method = HTTP_GET, .handler = handler_status },
         { .uri = "/health", .method = HTTP_GET, .handler = handler_health },
         { .uri = "/adc/led", .method = HTTP_GET, .handler = handler_adc_led },
@@ -851,6 +1211,10 @@ static esp_err_t start_http(void)
         { .uri = "/commands", .method = HTTP_PUT, .handler = handler_put_command },
         { .uri = "/commands", .method = HTTP_DELETE, .handler = handler_delete_command },
         { .uri = "/config/mqtt", .method = HTTP_POST, .handler = handler_config_mqtt },
+        { .uri = "/config/net", .method = HTTP_POST, .handler = handler_config_net },
+        { .uri = "/ir/duty", .method = HTTP_GET, .handler = handler_duty },
+        { .uri = "/ir/duty", .method = HTTP_POST, .handler = handler_duty },
+        { .uri = "/ir/probe", .method = HTTP_POST, .handler = handler_probe },
         { .uri = "/ir/learn", .method = HTTP_POST, .handler = handler_learn },
         { .uri = "/ir/*", .method = HTTP_POST, .handler = handler_ir },
     };

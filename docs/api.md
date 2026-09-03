@@ -1,24 +1,28 @@
 # Control API
 
-Default topic prefix is `ir`. HTTP listens on port **8080**.
+Default topic prefix is `ir`. HTTP listens on port **80**.
 
 ## HTTP
 
 | Method | Path | Body | Action |
 |--------|------|------|--------|
-| GET | `/` | — | Simple test UI |
+| GET | `/` | — | Phone remote UI (Sceptre TV + soundbar) |
+| GET | `/lab` | — | Learn / raw / ADC lab UI |
 | GET | `/status` | — | Identity, IP, MQTT state |
 | GET | `/health` | — | `ok` |
 | GET | `/devices` | — | Full catalog JSON |
 | GET | `/commands` | — | Same as `/devices` |
-| POST | `/ir/<device>/<command>` | optional `{"repeat":2}` | Send named command |
-| POST | `/ir/send` | JSON (named, protocol, or raw) | Send |
+| POST | `/ir/<device>/<command>` | optional `{"repeat":2,"duty":0.15}` | Send named command; response includes TSOP echo |
+| POST | `/ir/send` | JSON (named, protocol, or raw) | Send; same echo payload |
+| POST | `/ir/probe` | optional `{"duty":0.15,"repeat":3}` | Dummy Sony addr 31 (TV ignores). Reports whether TK15 saw clean vs glued/jammed frames — close-range proxy for the TV decoder |
+| GET/POST | `/ir/duty` | POST `{"duty":0.33}` | Carrier duty cycle (optical brightness). Default 0.33; clamp 0.05–0.50 |
 | POST | `/ir/learn` | optional `{"timeout_ms":8000,"device":"sceptre","command":"power"}` | Capture next remote press (includes `tk64` analog stats) |
 | GET/POST | `/adc/led` | — | GPIO18 DC on/off, ADC GPIO32 millivolts (÷2 tap) |
 | GET | `/adc/tk64` | — | TK64 phototransistor millivolts on GPIO34 |
 | PUT | `/commands` | JSON with `device`, `command`, code fields | Add / update and persist |
 | DELETE | `/commands` | `{"device":"tv","command":"power"}` | Remove and persist |
 | POST | `/config/mqtt` | `{"uri":"mqtt://host:1883","prefix":"ir",...}` | Save broker to NVS and reconnect |
+| POST | `/config/net` | `{"hostname":"ir","ip":"192.168.72.20","gateway":"192.168.72.1","netmask":"255.255.255.0"}` | Save static IP / hostname to NVS and reboot. Empty `ip` returns to DHCP. |
 
 ### POST `/ir/send` examples
 
@@ -40,9 +44,24 @@ Raw timings (microseconds, mark/space pairs):
 {"freq":38000,"timings":[9000,4500,560,1690,560,560],"repeat":1}
 ```
 
+`duty` on any send/probe is a one-shot override (restored after the blast). Every TX response includes:
+
+```json
+{
+  "ok": true,
+  "echo_quality": "clean",
+  "too_close": false,
+  "duty": 0.33,
+  "echo": [{"protocol":"sony","address":31,"command":0,"bits":12,"n":25}],
+  "tk64": {"gpio":34,"idle_mv":142,"min_mv":142,"max_mv":142,"no_swing":true}
+}
+```
+
+`echo_quality`: `clean` (separated frames, decoded), `glued` (repeats ran together), `jammed` (RX buffer filled), `distorted` (garbled), `no_echo` (TK15 heard nothing). `too_close` is true when the local TSOP — same distance from the LED as the TV window — did not see a clean burst. Lower `duty` or move the emitter.
+
 ```bash
-curl -X POST http://IR_MC_IP:8080/ir/demo/power
-curl -X POST http://IR_MC_IP:8080/ir/send \
+curl -X POST http://IR_MC_IP/ir/demo/power
+curl -X POST http://IR_MC_IP/ir/send \
   -H 'content-type: application/json' \
   -d '{"protocol":"nec","address":4,"command":8}'
 ```
@@ -70,7 +89,7 @@ mosquitto_pub -h 192.168.1.10 -t ir/raw \
 ## Adding a code without reflashing
 
 ```bash
-curl -X PUT http://IR_MC_IP:8080/commands \
+curl -X PUT http://IR_MC_IP/commands \
   -H 'content-type: application/json' \
   -d '{"device":"tv","command":"power","protocol":"nec","address":32,"command":16,"freq":38000,"repeat":2}'
 ```

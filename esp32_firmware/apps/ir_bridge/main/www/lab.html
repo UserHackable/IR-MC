@@ -1,0 +1,95 @@
+<!doctype html>
+<meta charset=utf-8>
+<meta name=viewport content="width=device-width,initial-scale=1">
+<title>IR-MC lab</title>
+<style>
+body{font-family:system-ui,sans-serif;max-width:42rem;margin:1.5rem auto;padding:0 1rem;background:#111;color:#eee}
+a{color:#c4b5fd}
+button{margin:.2rem;padding:.4rem .7rem}
+pre{background:#222;padding:.5rem;overflow:auto}
+textarea{width:100%;font-family:monospace;background:#222;color:#eee}
+section{margin:1.5rem 0;padding:1rem 0;border-top:1px solid #333}
+</style>
+<p><a href=/>← remotes</a></p>
+<h1>IR-MC lab</h1>
+<p id=st>loading…</p>
+<section>
+  <h2>Named commands</h2>
+  <div id=cmds></div>
+</section>
+<section>
+  <h2>Learn from remote</h2>
+  <p>Point the remote at the TSOP on GPIO19 and press one button.</p>
+  <p>device <input id=ld value=sceptre size=10> command <input id=lc value=power size=10>
+  <button onclick="learn()">Learn (8s)</button></p>
+</section>
+<section>
+  <h2>Close-range probe</h2>
+  <p>TK15 (TSOP GPIO19) sits about as far from the LED as the TV IR window.
+  Probe blasts a dummy Sony frame (addr 31 — TV ignores it) and reports whether
+  the local decoder saw clean separated frames or a glued/jammed burst (too close / too hot).</p>
+  <p>Carrier duty
+    <input id=duty type=number min=0.05 max=0.5 step=0.05 value=0.33 style="width:4.5rem">
+    <button onclick="setDuty()">Set duty</button>
+    <button onclick="probe()">Probe (dummy, TV-safe)</button>
+  </p>
+  <p>echo_quality: <code>clean</code> good · <code>glued</code>/<code>jammed</code> dim the LED or move it · <code>no_echo</code> aim/wiring.</p>
+</section>
+<section>
+  <h2>Send raw</h2>
+  <textarea id=raw rows=6>{ "freq": 38000, "timings": [9000,4500,560,1690,560,560], "repeat": 1 }</textarea>
+  <p><button onclick="sendRaw()">Send raw</button></p>
+</section>
+<section>
+  <h2>LED anode sense</h2>
+  <p>GPIO18 DC on/off, ADC1_CH4 on silk 32 (÷2 divider tap). Estimates LED+ as 2×.</p>
+  <p><button onclick="post('/adc/led')">Measure</button></p>
+</section>
+<pre id=log></pre>
+<script>
+async function st(){
+  const r=await fetch('/status');const j=await r.json();
+  document.getElementById('st').textContent=j.identity+' · '+j.ip+' · v'+j.version+
+    ' · mqtt '+(j.mqtt&&j.mqtt.connected?'up':'down')+
+    (j.tx_duty!=null?' · duty '+j.tx_duty:'');
+  if(j.tx_duty!=null) document.getElementById('duty').value=j.tx_duty;
+}
+async function load(){
+  const r=await fetch('/devices');const j=await r.json();
+  const el=document.getElementById('cmds');el.innerHTML='';
+  const devs=j.devices||{};
+  for(const d of Object.keys(devs)){
+    const h=document.createElement('h3');h.textContent=d;el.appendChild(h);
+    for(const c of Object.keys(devs[d])){
+      const b=document.createElement('button');b.textContent=c;
+      b.onclick=()=>post('/ir/'+d+'/'+c);el.appendChild(b);
+    }
+  }
+}
+async function post(url,body){
+  const r=await fetch(url,{method:'POST',headers:{'content-type':'application/json'},
+    body:body?JSON.stringify(body):'{}'});
+  document.getElementById('log').textContent=await r.text();
+}
+function sendRaw(){post('/ir/send',JSON.parse(document.getElementById('raw').value));}
+async function setDuty(){
+  const duty=parseFloat(document.getElementById('duty').value);
+  post('/ir/duty',{duty});
+}
+async function probe(){
+  const duty=parseFloat(document.getElementById('duty').value);
+  document.getElementById('log').textContent='probing…';
+  const r=await fetch('/ir/probe',{method:'POST',headers:{'content-type':'application/json'},
+    body:JSON.stringify({duty})});
+  document.getElementById('log').textContent=await r.text();
+}
+async function learn(){
+  document.getElementById('log').textContent='listening… press the remote';
+  const body={timeout_ms:8000,device:document.getElementById('ld').value,
+    command:document.getElementById('lc').value};
+  const r=await fetch('/ir/learn',{method:'POST',headers:{'content-type':'application/json'},
+    body:JSON.stringify(body)});
+  document.getElementById('log').textContent=await r.text(); load();
+}
+st();load();
+</script>

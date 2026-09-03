@@ -2,9 +2,9 @@
  * ESP-IDF app: ir_bridge
  *
  * IR-MC — network-addressable IR transceiver:
- *   1. NVS Wi‑Fi STA + DHCP
+ *   1. NVS Wi‑Fi STA + DHCP (optional static IP / hostname)
  *   2. UDP LAN announce (role=ir_mc)
- *   3. HTTP :8080 control + MQTT named/raw IR transmit via RMT
+ *   3. HTTP :80 control + MQTT named/raw IR transmit via RMT
  *
  *   ./scripts/fw idf nvs-wifi
  *   ./scripts/fw idf upload ir_bridge
@@ -43,12 +43,85 @@
 static const char *TAG = "ir_bridge";
 
 char g_identity[32];
+char g_hostname[32];
 char g_ip_str[16];
 EventGroupHandle_t g_wifi_events;
 
-#define NVS_NS_WIFI  "wifi"
-#define NVS_KEY_SSID "ssid"
-#define NVS_KEY_PASS "password"
+#define NVS_NS_WIFI      "wifi"
+#define NVS_KEY_SSID     "ssid"
+#define NVS_KEY_PASS     "password"
+#define NVS_KEY_HOSTNAME "hostname"
+#define NVS_KEY_IP       "ip"
+#define NVS_KEY_GW       "gateway"
+#define NVS_KEY_MASK     "netmask"
+
+static esp_netif_t *s_sta_netif;
+
+static void nvs_get_opt_str(nvs_handle_t h, const char *key, char *out, size_t len)
+{
+    out[0] = 0;
+    size_t n = len;
+    if (nvs_get_str(h, key, out, &n) != ESP_OK) {
+        out[0] = 0;
+    }
+}
+
+static void net_apply_from_nvs(esp_netif_t *netif)
+{
+    nvs_handle_t h;
+    char hostname[32] = {0};
+    char ip[16] = {0};
+    char gw[16] = {0};
+    char mask[16] = {0};
+
+    if (nvs_open(NVS_NS_WIFI, NVS_READONLY, &h) == ESP_OK) {
+        nvs_get_opt_str(h, NVS_KEY_HOSTNAME, hostname, sizeof(hostname));
+        nvs_get_opt_str(h, NVS_KEY_IP, ip, sizeof(ip));
+        nvs_get_opt_str(h, NVS_KEY_GW, gw, sizeof(gw));
+        nvs_get_opt_str(h, NVS_KEY_MASK, mask, sizeof(mask));
+        nvs_close(h);
+    }
+
+    const char *host = hostname[0] ? hostname : g_identity;
+    snprintf(g_hostname, sizeof(g_hostname), "%s", host);
+    if (esp_netif_set_hostname(netif, host) != ESP_OK) {
+        ESP_LOGW(TAG, "hostname '%s' rejected", host);
+    }
+
+    if (!ip[0]) {
+        return;
+    }
+
+    esp_netif_ip_info_t info = {0};
+    if (esp_netif_str_to_ip4(ip, &info.ip) != ESP_OK) {
+        ESP_LOGW(TAG, "bad static ip '%s' — DHCP", ip);
+        return;
+    }
+    if (esp_netif_str_to_ip4(gw[0] ? gw : "192.168.72.1", &info.gw) != ESP_OK ||
+        esp_netif_str_to_ip4(mask[0] ? mask : "255.255.255.0", &info.netmask) != ESP_OK) {
+        ESP_LOGW(TAG, "bad static gateway/mask — DHCP");
+        return;
+    }
+
+    esp_err_t err = esp_netif_dhcpc_stop(netif);
+    if (err != ESP_OK && err != ESP_ERR_ESP_NETIF_DHCP_ALREADY_STOPPED) {
+        ESP_LOGW(TAG, "dhcpc_stop: %s", esp_err_to_name(err));
+    }
+    if (esp_netif_set_ip_info(netif, &info) != ESP_OK) {
+        ESP_LOGW(TAG, "set_ip_info failed — DHCP");
+        return;
+    }
+
+    esp_netif_dns_info_t dns = {0};
+    dns.ip.type = ESP_IPADDR_TYPE_V4;
+    if (esp_netif_str_to_ip4("192.168.72.3", &dns.ip.u_addr.ip4) == ESP_OK) {
+        esp_netif_set_dns_info(netif, ESP_NETIF_DNS_MAIN, &dns);
+    }
+    if (esp_netif_str_to_ip4("192.168.72.2", &dns.ip.u_addr.ip4) == ESP_OK) {
+        esp_netif_set_dns_info(netif, ESP_NETIF_DNS_BACKUP, &dns);
+    }
+    ESP_LOGI(TAG, "static IP %s hostname %s", ip, host);
+}
 
 static void build_identity(void)
 {
@@ -161,7 +234,7 @@ static void wifi_handler(void *arg, esp_event_base_t base, int32_t id, void *dat
     } else if (base == IP_EVENT && id == IP_EVENT_STA_GOT_IP) {
         ip_event_got_ip_t *ev = (ip_event_got_ip_t *)data;
         snprintf(g_ip_str, sizeof(g_ip_str), IPSTR, IP2STR(&ev->ip_info.ip));
-        ESP_LOGI(TAG, "DHCP %s identity=%s", g_ip_str, g_identity);
+        ESP_LOGI(TAG, "got IP %s identity=%s hostname=%s", g_ip_str, g_identity, g_hostname);
         xEventGroupSetBits(g_wifi_events, GOT_IP_BIT);
         net_ctrl_on_got_ip();
     }
@@ -196,7 +269,8 @@ static void wifi_init_sta(const char *ssid, const char *pass)
 
     ESP_ERROR_CHECK(esp_netif_init());
     ESP_ERROR_CHECK(esp_event_loop_create_default());
-    esp_netif_create_default_wifi_sta();
+    s_sta_netif = esp_netif_create_default_wifi_sta();
+    net_apply_from_nvs(s_sta_netif);
 
     wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
     ESP_ERROR_CHECK(esp_wifi_init(&cfg));

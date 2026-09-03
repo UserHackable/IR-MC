@@ -49,4 +49,4 @@ Protocol objects:
 ## Discovery
 
 UDP broadcast every 5 s on port **3000**, same shape as other UserHackable
-ESP32 tools (`role=ir_mc`). HTTP status lives at `http://<ip>:8080/status`.
+ESP32 tools (`role=ir_mc`). HTTP status lives at `http://<ip>/status`.

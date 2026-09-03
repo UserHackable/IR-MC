@@ -19,5 +19,11 @@ typedef struct {
 
 esp_err_t ir_rx_init(void);
 
+/* Drop queued demodulated frames (self-TX echo, stale handheld, …). */
+void ir_rx_drain(void);
+
+/* Pop one frame. timeout_ms == 0 is non-blocking. ESP_ERR_TIMEOUT if none. */
+esp_err_t ir_rx_take(ir_frame_t *out, int timeout_ms);
+
 /* Wait for the next demodulated frame (one remote button). timeout_ms <= 0 uses 8000. */
 esp_err_t ir_rx_learn(int timeout_ms, ir_frame_t *out);

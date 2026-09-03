@@ -8,6 +8,11 @@
 
 esp_err_t ir_tx_init(void);
 
+/* Carrier duty cycle is optical brightness. 0.33 is a typical remote.
+ * Clamp 0.05–0.50. */
+void ir_tx_set_duty(float duty);
+float ir_tx_get_duty(void);
+
 /* Steal GPIO18 from RMT as a plain DC output (transistor on/off, no carrier). */
 esp_err_t ir_tx_dc_begin(void);
 void ir_tx_dc_set(int on);

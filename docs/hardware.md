@@ -12,7 +12,7 @@ console. IR LED is driven from **5 V**, not the 3.3 V rail.
 | Status LED | **2** | Onboard LED on many DevKits; on during TX |
 | Button | **0** | BOOT button after boot sends `demo/power` |
 | IR receive (TK15 / TSOP) | **19** | 38 kHz demodulator, idle HIGH; **3.3 V** |
-| Raw IR (TK64 phototransistor) | **34** | ADC1; no demod. **3.3 V**. Compare against TK15 |
+| Raw IR (TK64 phototransistor) | **34** | ADC1; no demod. **3.3 V**. Compare against TK15. On the Haruna board this pin currently sits at a dead **142 mV** (no swing when the LED fires) — treat TK15 as the live close-range proxy until TK64 is rewired. |
 
 Override `IR_TX_GPIO` at compile time if the wiring differs.
 
@@ -82,6 +82,52 @@ dim glow). Then swap in 940 nm.
 Wavelength: **940 nm** is the consumer-remote standard. 850 nm is optional /
 experimental and not wired in v0.
 
+## Stronger ceiling LED (solder next) — soundbar bounce
+
+**2026-09-03:** The real soundbar remote **does** reach the bar via ceiling
+bounce from the same spot as TK16. Geometry is fine. The blaster is the weak
+link: GPIO-direct on GPIO 18, ~tens of mA; a handheld is ~100 mA pulsed.
+Soundbar keys were also a **single** NEC frame (handheld taps are 2–3). Firmware
+0.3.3 sends soundbar NEC **repeat 3**.
+
+Solder the **2N2222 + 5 V** drive on the **existing** ceiling-aimed LED first.
+Do not add a second LED until that is still deaf. Unplug USB. Do **not** drive
+the LED from the GPIO.
+
+```text
+                    5V  (left header, bottom)
+                     │
+                 [ Rled 22–68 Ω ]
+                     │
+                 IR LED anode  (keep aimed at the ceiling)
+                     │
+                 IR LED cathode
+                     │
+                  collector
+ GPIO18 ──[ Rb 330–470 Ω ]── base          2N2222
+                  emitter
+                     │
+                    GND
+```
+
+After solder: TV Info must still work (may be *too* hot if you later point at
+the IR window — leave it on the ceiling). Then Soundbar VOL± on `http://ir.lan/`
+(Soundbar tab).
+
+### Fallback: second LED
+
+Only if 5 V drive + ceiling bounce still misses the bar. Same transistor, two
+branches; extra LED aimed at the bar or the wall in front of it. Sony (TV) and
+NEC (bar) ignore each other.
+
+```text
+5V ──[ Rled ]── LED (ceiling, TV)
+  └──[ Rled ]── LED (forward, soundbar)
+         └── both cathodes → 2N2222 collector
+GPIO18 ──[ Rb ]── base
+emitter → GND
+```
+
 ## IR receiver (learn)
 
 Part: **TSOP38238**, **TSOP38438**, or cheap **VS1838B** — 38 kHz demodulator.
@@ -107,7 +153,7 @@ After wiring:
 
 ```bash
 ./scripts/fw idf upload ir_bridge
-curl -X POST http://IR_MC_IP:8080/ir/learn \
+curl -X POST http://IR_MC_IP/ir/learn \
   -H 'content-type: application/json' \
   -d '{"timeout_ms":8000,"device":"sceptre","command":"power"}'
 ```

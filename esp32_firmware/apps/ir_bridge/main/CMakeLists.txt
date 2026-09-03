@@ -22,4 +22,7 @@ idf_component_register(
     spiffs
     vfs
     lwip
+  EMBED_TXTFILES
+    "www/remote.html"
+    "www/lab.html"
 )

@@ -18,6 +18,7 @@ static const char *TAG = "ir_rx";
 #define IR_RX_MIN_NS        1250
 #define IR_RX_MAX_NS        20000000
 #define LEARN_DEFAULT_MS    8000
+#define IR_RX_QUEUE_LEN     8
 
 static rmt_channel_handle_t s_rx;
 static QueueHandle_t s_done;
@@ -214,7 +215,11 @@ static void rx_task(void *arg)
             }
             ESP_LOGI(TAG, "%s", msg);
         }
-        xQueueOverwrite(s_frames, &fr);
+        if (xQueueSend(s_frames, &fr, 0) != pdTRUE) {
+            ir_frame_t dump;
+            (void)xQueueReceive(s_frames, &dump, 0);
+            (void)xQueueSend(s_frames, &fr, 0);
+        }
     }
 }
 
@@ -235,7 +240,7 @@ esp_err_t ir_rx_init(void)
     }
 
     s_done = xQueueCreate(1, sizeof(rmt_rx_done_event_data_t));
-    s_frames = xQueueCreate(1, sizeof(ir_frame_t));
+    s_frames = xQueueCreate(IR_RX_QUEUE_LEN, sizeof(ir_frame_t));
     if (!s_done || !s_frames) {
         return ESP_ERR_NO_MEM;
     }
@@ -250,6 +255,29 @@ esp_err_t ir_rx_init(void)
         return ESP_ERR_NO_MEM;
     }
     return ESP_OK;
+}
+
+void ir_rx_drain(void)
+{
+    if (!s_frames) {
+        return;
+    }
+    ir_frame_t dump;
+    while (xQueueReceive(s_frames, &dump, 0) == pdTRUE) {
+        /* discard */
+    }
+}
+
+esp_err_t ir_rx_take(ir_frame_t *out, int timeout_ms)
+{
+    if (!out || !s_frames) {
+        return ESP_ERR_INVALID_STATE;
+    }
+    TickType_t ticks = (timeout_ms <= 0) ? 0 : pdMS_TO_TICKS(timeout_ms);
+    if (xQueueReceive(s_frames, out, ticks) == pdTRUE) {
+        return ESP_OK;
+    }
+    return ESP_ERR_TIMEOUT;
 }
 
 esp_err_t ir_rx_learn(int timeout_ms, ir_frame_t *out)

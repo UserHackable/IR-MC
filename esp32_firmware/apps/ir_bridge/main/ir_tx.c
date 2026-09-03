@@ -1,5 +1,6 @@
 #include "ir_tx.h"
 #include "board.h"
+#include "ir_raw.h"
 
 #include "driver/gpio.h"
 #include "driver/rmt_encoder.h"
@@ -10,6 +11,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 
+#include <stdbool.h>
 #include <stdlib.h>
 #include <string.h>
 #include <strings.h>
@@ -25,6 +27,8 @@ static rmt_channel_handle_t s_chan;
 static rmt_encoder_handle_t s_encoder;
 static SemaphoreHandle_t s_lock;
 static uint32_t s_carrier_hz;
+static float s_duty = 0.33f; /* typical remote; ceiling bounce needs the extra light */
+static float s_applied_duty;
 static rmt_symbol_word_t s_symbols[IR_MAX_SYMBOLS];
 
 static void led_set(int on)
@@ -75,28 +79,63 @@ static size_t timings_to_symbols(const uint16_t *t, size_t n, rmt_symbol_word_t 
     return ns;
 }
 
+void ir_tx_set_duty(float duty)
+{
+    if (duty < 0.05f) {
+        duty = 0.05f;
+    }
+    if (duty > 0.50f) {
+        duty = 0.50f;
+    }
+    s_duty = duty;
+}
+
+float ir_tx_get_duty(void)
+{
+    return s_duty;
+}
+
 static esp_err_t apply_carrier(uint32_t freq_hz)
 {
-    if (freq_hz == s_carrier_hz) {
+    if (freq_hz == s_carrier_hz && s_duty == s_applied_duty) {
         return ESP_OK;
     }
     if (freq_hz == 0) {
         esp_err_t err = rmt_apply_carrier(s_chan, NULL);
         if (err == ESP_OK) {
             s_carrier_hz = 0;
+            s_applied_duty = 0;
         }
         return err;
     }
     rmt_carrier_config_t carrier = {
         .frequency_hz = freq_hz,
-        .duty_cycle = 0.33f,
+        .duty_cycle = s_duty,
         .flags.polarity_active_low = false,
     };
     esp_err_t err = rmt_apply_carrier(s_chan, &carrier);
     if (err == ESP_OK) {
         s_carrier_hz = freq_hz;
+        s_applied_duty = s_duty;
     }
     return err;
+}
+
+static size_t append_space(rmt_symbol_word_t *out, size_t ns, size_t out_max, uint32_t us)
+{
+    /* Idle-low gap encoded in RMT so inter-frame spacing is microsecond-accurate.
+     * vTaskDelay() at the default 10 ms tick was collapsing a 25 ms Sony gap to
+     * ~11 ms, which glued frames together on the local TSOP (and the TV). */
+    while (us > 0 && ns < out_max) {
+        uint32_t chunk = us > IR_DUR_MAX ? IR_DUR_MAX : us;
+        out[ns].level0 = 0;
+        out[ns].duration0 = clamp_dur(chunk);
+        out[ns].level1 = 0;
+        out[ns].duration1 = 1;
+        ns++;
+        us -= chunk;
+    }
+    return ns;
 }
 
 esp_err_t ir_tx_init(void)
@@ -240,9 +279,13 @@ esp_err_t ir_tx_send_raw(uint32_t freq_hz, const uint16_t *timings, size_t count
         xSemaphoreGive(s_lock);
         return ESP_ERR_INVALID_SIZE;
     }
+    if (repeat > 1 && gap_ms > 0) {
+        ns = append_space(s_symbols, ns, IR_MAX_SYMBOLS, (uint32_t)gap_ms * 1000u);
+    }
 
     rmt_transmit_config_t tx_cfg = {
         .loop_count = 0,
+        .flags.eot_level = 0,
     };
 
     for (int r = 0; r < repeat; r++) {
@@ -254,16 +297,14 @@ esp_err_t ir_tx_send_raw(uint32_t freq_hz, const uint16_t *timings, size_t count
         if (err != ESP_OK) {
             break;
         }
-        if (r + 1 < repeat && gap_ms > 0) {
-            vTaskDelay(pdMS_TO_TICKS(gap_ms));
-        }
+        ir_raw_poll();
     }
 
     led_set(0);
     xSemaphoreGive(s_lock);
     if (err == ESP_OK) {
-        ESP_LOGI(TAG, "sent %u timings freq=%lu repeat=%d", (unsigned)count,
-                 (unsigned long)freq_hz, repeat);
+        ESP_LOGI(TAG, "sent %u timings freq=%lu repeat=%d duty=%.2f gap_ms=%d",
+                 (unsigned)count, (unsigned long)freq_hz, repeat, (double)s_duty, gap_ms);
     } else {
         ESP_LOGE(TAG, "transmit failed: %s", esp_err_to_name(err));
     }
@@ -391,50 +432,62 @@ esp_err_t ir_execute_json(const cJSON *cmd, int repeat_override)
     }
     uint32_t freq = json_u32(cmd, "freq", 0);
     const char *proto = json_str(cmd, "protocol", NULL);
+    float prev_duty = ir_tx_get_duty();
+    bool duty_override = false;
+    const cJSON *duty_j = cJSON_GetObjectItemCaseSensitive(cmd, "duty");
+    if (cJSON_IsNumber(duty_j)) {
+        ir_tx_set_duty((float)duty_j->valuedouble);
+        duty_override = true;
+    }
 
+    esp_err_t err = ESP_ERR_INVALID_ARG;
     const cJSON *timings = cJSON_GetObjectItemCaseSensitive(cmd, "timings");
     if (timings && cJSON_IsArray(timings) && (!proto || strcasecmp(proto, "raw") == 0)) {
         int n = cJSON_GetArraySize(timings);
         if (n <= 0 || n > IR_MAX_TIMINGS) {
-            return ESP_ERR_INVALID_SIZE;
-        }
-        uint16_t *buf = calloc((size_t)n, sizeof(uint16_t));
-        if (!buf) {
-            return ESP_ERR_NO_MEM;
-        }
-        for (int i = 0; i < n; i++) {
-            const cJSON *el = cJSON_GetArrayItem(timings, i);
-            if (!cJSON_IsNumber(el) || el->valuedouble < 0 || el->valuedouble > 65535) {
+            err = ESP_ERR_INVALID_SIZE;
+        } else {
+            uint16_t *buf = calloc((size_t)n, sizeof(uint16_t));
+            if (!buf) {
+                err = ESP_ERR_NO_MEM;
+            } else {
+                err = ESP_OK;
+                for (int i = 0; i < n; i++) {
+                    const cJSON *el = cJSON_GetArrayItem(timings, i);
+                    if (!cJSON_IsNumber(el) || el->valuedouble < 0 || el->valuedouble > 65535) {
+                        err = ESP_ERR_INVALID_ARG;
+                        break;
+                    }
+                    buf[i] = (uint16_t)el->valuedouble;
+                }
+                if (err == ESP_OK) {
+                    if (freq == 0) {
+                        freq = 38000;
+                    }
+                    int gap = json_int(cmd, "gap_ms", 100);
+                    err = ir_tx_send_raw(freq, buf, (size_t)n, repeat, gap);
+                }
                 free(buf);
-                return ESP_ERR_INVALID_ARG;
             }
-            buf[i] = (uint16_t)el->valuedouble;
         }
-        if (freq == 0) {
-            freq = 38000;
+    } else if (!proto) {
+        err = ESP_ERR_INVALID_ARG;
+    } else {
+        uint16_t address = (uint16_t)json_u32(cmd, "address", 0);
+        uint16_t command = (uint16_t)json_u32(cmd, "command", 0);
+        if (strcasecmp(proto, "nec") == 0) {
+            err = ir_tx_send_nec(address, command, freq, repeat);
+        } else if (strcasecmp(proto, "samsung") == 0) {
+            err = ir_tx_send_samsung(address, command, freq, repeat);
+        } else if (strcasecmp(proto, "sony") == 0 || strcasecmp(proto, "sirc") == 0) {
+            int bits = json_int(cmd, "bits", 12);
+            err = ir_tx_send_sony(address, command, bits, freq, repeat);
+        } else {
+            err = ESP_ERR_NOT_SUPPORTED;
         }
-        int gap = json_int(cmd, "gap_ms", 100);
-        esp_err_t err = ir_tx_send_raw(freq, buf, (size_t)n, repeat, gap);
-        free(buf);
-        return err;
     }
-
-    if (!proto) {
-        return ESP_ERR_INVALID_ARG;
+    if (duty_override) {
+        ir_tx_set_duty(prev_duty);
     }
-
-    uint16_t address = (uint16_t)json_u32(cmd, "address", 0);
-    uint16_t command = (uint16_t)json_u32(cmd, "command", 0);
-
-    if (strcasecmp(proto, "nec") == 0) {
-        return ir_tx_send_nec(address, command, freq, repeat);
-    }
-    if (strcasecmp(proto, "samsung") == 0) {
-        return ir_tx_send_samsung(address, command, freq, repeat);
-    }
-    if (strcasecmp(proto, "sony") == 0 || strcasecmp(proto, "sirc") == 0) {
-        int bits = json_int(cmd, "bits", 12);
-        return ir_tx_send_sony(address, command, bits, freq, repeat);
-    }
-    return ESP_ERR_NOT_SUPPORTED;
+    return err;
 }

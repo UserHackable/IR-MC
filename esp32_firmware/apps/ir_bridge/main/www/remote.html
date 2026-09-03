@@ -1,0 +1,131 @@
+<!doctype html>
+<meta charset=utf-8>
+<meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name=apple-mobile-web-app-capable content=yes>
+<meta name=theme-color content="#09090b">
+<title>IR remotes</title>
+<style>
+:root{color-scheme:dark}
+body{margin:0;font-family:system-ui,sans-serif;background:#09090b;color:#fafafa}
+header{padding:.9rem 1rem .4rem}
+h1{font-size:1.15rem;margin:0}
+#st{color:#a1a1aa;font-size:.8rem;margin:.35rem 0 0}
+nav{display:flex;gap:.4rem;padding:0 1rem 1rem}
+nav button{flex:1;border:0;border-radius:.7rem;padding:.55rem;background:#27272a;color:#d4d4d8;font-weight:650}
+nav button.on{background:#6d28d9;color:#fff}
+.face{max-width:22rem;margin:0 auto;padding:1rem .85rem 1.5rem;border:1px solid #3f3f46;border-radius:1.6rem;background:#18181b}
+.row{display:grid;gap:.4rem;margin:.4rem 0}
+.key,.sp{min-height:2.65rem}
+.key{border:1px solid #3f3f46;border-radius:999px;background:#27272a;color:#fff;font-weight:650;font-size:.8rem}
+.key:active,.key.dn{filter:brightness(1.25);transform:scale(.97)}
+.power{background:#b91c1c;border-color:#ef4444}
+.accent{background:#c2410c;border-color:#fb923c}
+.nav{background:#3f3f46}
+.ca{background:#dc2626}.cb{background:#16a34a}
+.cc{background:#ca8a04;color:#18181b}.cd{background:#2563eb}
+.brand{text-align:center;margin-top:.7rem;letter-spacing:.28em;color:#f87171;font-weight:800;font-size:.72rem}
+.note{max-width:22rem;margin:.8rem auto 0;color:#a1a1aa;font-size:.8rem;padding:0 1rem}
+a{color:#c4b5fd}
+</style>
+<header>
+  <h1>IR remotes</h1>
+  <p id=st>…</p>
+</header>
+<nav>
+  <button id=tTV class=on onclick="tab('tv')">TV</button>
+  <button id=tBar onclick="tab('bar')">Soundbar</button>
+</nav>
+<div id=box class=face></div>
+<p class=note>ir.lan · 192.168.72.20 · GPIO 18. Soundbar may need its own LED. <a href=/lab>Lab</a></p>
+<script>
+const S={p:'sony',a:1,b:12,f:40000,r:3};
+const N={p:'nec',a:46723,b:32,f:38000,r:3};
+function c(base,cmd,extra){return Object.assign({protocol:base.p,address:base.a,command:cmd,bits:base.b,freq:base.f,repeat:base.r},extra||{})}
+const TV={
+  power:c(S,21,{repeat:5}),info:c(S,60),
+  d1:c(S,0),d2:c(S,1),d3:c(S,2),d4:c(S,3),d5:c(S,4),d6:c(S,5),d7:c(S,6),d8:c(S,7),d9:c(S,8),
+  dash:c(S,32),d0:c(S,9),last:c(S,59),
+  vu:c(S,18),vd:c(S,19),cu:c(S,16),cd:c(S,17),
+  up:c(S,116),dn:c(S,117),lt:c(S,52),rt:c(S,51),ok:c(S,11),
+  menu:c(S,96),guide:c(S,101),exit:c(S,22),src:c(S,37),cc:c(S,35),mute:c(S,20),
+  fav:c(S,24),fadd:c(S,36),sleep:c(S,54),
+  usb:c(S,99),ypb:c(S,69),hdmi:c(S,57),p2:c(S,109),
+  a:c(S,122),b:c(S,123),c:c(S,124),d:c(S,125)
+};
+const BAR={
+  power:c(N,77),mute:c(N,67),pair:c(N,28),inp:c(N,29),
+  vu:c(N,11),vd:c(N,14),nx:c(N,17),pv:c(N,16),play:c(N,13),
+  music:c(N,69),news:c(N,78),movie:c(N,71),
+  tu:c(N,26),td:c(N,66),bu:c(N,23),bd:c(N,24),e3d:c(N,76)
+};
+const LAY={
+tv:[
+  [['power','Power','power'],['info','Info','accent']],
+  [['d1','1'],['d2','2'],['d3','3']],
+  [['d4','4'],['d5','5'],['d6','6']],
+  [['d7','7'],['d8','8'],['d9','9']],
+  [['dash','−'],['d0','0'],['last','R','accent']],
+  [['vu','VOL+','accent',1],['up','▲','nav'],['cu','CH+','accent',1]],
+  [['lt','◀','nav'],['ok','ENTER','nav'],['rt','▶','nav']],
+  [['vd','VOL−','accent',1],['dn','▼','nav'],['cd','CH−','accent',1]],
+  [['menu','Menu','accent'],['guide','Guide','accent'],['exit','Exit','accent']],
+  [['src','Source','accent'],['cc','CC','accent'],['mute','Mute','accent']],
+  [['fav','Fav','accent'],['fadd','F.ADD','accent'],['sleep','Sleep','accent']],
+  [['usb','USB'],['ypb','YPbPr'],['hdmi','HDMI'],['p2','Power','power']],
+  [['a','A','ca'],['b','B','cb'],['c','C','cc'],['d','D','cd']]
+],
+bar:[
+  [['power','Power','power'],['mute','Mute','accent']],
+  [['pair','PAIR'],['inp','INPUT']],
+  [['pv','◀◀','nav'],['vu','VOL+','accent',1],['nx','▶▶','nav']],
+  [[null],[ 'play','RESET','nav'],[null]],
+  [[null],['vd','VOL−','accent',1],[null]],
+  [['music','MUSIC'],['news','NEWS'],['movie','MOVIE']],
+  [['tu','TREB+'],[null],['bu','BASS+']],
+  [['td','TREB−'],['e3d','3D','nav'],['bd','BASS−']]
+]};
+let which='tv', codes=TV, hold=0;
+function tab(w){
+  which=w; codes=w==='tv'?TV:BAR;
+  document.getElementById('tTV').className=w==='tv'?'on':'';
+  document.getElementById('tBar').className=w==='bar'?'on':'';
+  draw();
+}
+function draw(){
+  const box=document.getElementById('box');
+  box.innerHTML='';
+  for(const row of LAY[which]){
+    const r=document.createElement('div');
+    r.className='row';
+    r.style.gridTemplateColumns='repeat('+row.length+',minmax(0,1fr))';
+    for(const cell of row){
+      if(!cell || !cell[0]){const s=document.createElement('span');s.className='sp';r.appendChild(s);continue}
+      const b=document.createElement('button');
+      b.className='key '+(cell[2]||'');
+      b.textContent=cell[1];
+      b.onpointerdown=e=>{e.preventDefault();fire(cell[0]);b.classList.add('dn');
+        if(cell[3]){clearInterval(hold);hold=setInterval(()=>fire(cell[0]),220)} };
+      b.onpointerup=b.onpointerleave=()=>{b.classList.remove('dn');clearInterval(hold)};
+      r.appendChild(b);
+    }
+    box.appendChild(r);
+  }
+  const br=document.createElement('div');
+  br.className='brand';
+  br.textContent=which==='tv'?'SCEPTRE':'P';
+  box.appendChild(br);
+}
+async function fire(id){
+  const body=codes[id];
+  if(!body) return;
+  try{await fetch('/ir/send',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body)})}
+  catch(e){}
+}
+async function st(){
+  try{
+    const j=await (await fetch('/status')).json();
+    document.getElementById('st').textContent=j.identity+' · '+j.ip+(j.tx?' · TX':'');
+  }catch(e){document.getElementById('st').textContent='offline'}
+}
+draw();st();
+</script>

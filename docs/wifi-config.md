@@ -44,7 +44,7 @@ together.
 You can also set MQTT later without reflashing:
 
 ```bash
-curl -X POST http://IR_MC_IP:8080/config/mqtt \
+curl -X POST http://IR_MC_IP/config/mqtt \
   -H 'content-type: application/json' \
   -d '{"uri":"mqtt://192.168.1.10:1883","prefix":"ir"}'
 ```
@@ -63,3 +63,16 @@ $EDITOR secrets/wifi.yaml
 
 `ir_bridge` reads NVS namespace `wifi` keys `ssid` and `password`. It does
 **not** embed the password in the app binary. HTTP works even if MQTT is unset.
+
+Optional NVS keys in the same `wifi` namespace (set with `POST /config/net`,
+no Wi‑Fi reflash):
+
+| Key | Example | Effect |
+|-----|---------|--------|
+| `hostname` | `ir` | DHCP option 12 (GFiber hostname) |
+| `ip` | `192.168.72.20` | Static address (empty → DHCP) |
+| `gateway` | `192.168.72.1` | Default if omitted: `192.168.72.1` |
+| `netmask` | `255.255.255.0` | Default if omitted: `255.255.255.0` |
+
+The Haruna TV blaster is **`ir`** at **`192.168.72.20`** (`ir.lan`).
+The USB learn board on Noelle stays on DHCP.
