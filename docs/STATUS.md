@@ -1,10 +1,30 @@
 # Project status (snapshot)
 
-Last updated: **2026-09-04** (placement module at `.21`; TV and soundbar both work to ~8 ft on GPIO-direct TK16).
+Last updated: **2026-09-03** (breadboard emitter on Noelle programmed as `ir22` / `.22`).
 
-## Live rig (Haruna)
+## Live boards
 
-One classic ESP32 on Haruna USB (`/dev/ttyUSB0`, CP2102), running **`ir_bridge`**. This is a **new module** (MAC `58:2a:bd:78:58:20`) used to test transmitter placement. The previous board was `ir-mc-582abd78af4c` at `192.168.72.20` / `ir.lan`.
+| Name | IP | Identity | Where | TX |
+|------|----|----------|-------|----|
+| `ir` | `192.168.72.20` | `ir-mc-582abd78af4c` | still on LAN | `ir_bridge` 0.3.4 |
+| `ir21` | `192.168.72.21` | `ir-mc-582abd785820` | Haruna USB `/dev/ttyUSB0` | GPIO-direct TK16 |
+| **`ir22`** | **`192.168.72.22`** | **`ir-mc-489d31e61010`** | **Noelle USB `/dev/ttyUSB0`** | **breadboard 2N2222 + 5 V IR LED** |
+
+Phone remotes: `http://192.168.72.22/` (this USB board) and `http://192.168.72.21/` (Haruna). Lab UI: `/lab`.
+
+## Live rig (Noelle) — `ir22`
+
+Original breadboard transistor emitter, MAC `48:9d:31:e6:10:10`. Flashed **`ir_bridge` 0.3.4** with NVS hostname `ir22` and static `192.168.72.22`. TX is GPIO **18** through the 2N2222 (not GPIO-direct). Flash this CP2102 at **115200**.
+
+```bash
+PORT=/dev/ttyUSB0 ESPTOOL_BAUD=115200 \
+  WIFI_HOSTNAME=ir22 WIFI_IP=192.168.72.22 ./scripts/fw idf nvs-wifi
+PORT=/dev/ttyUSB0 ./scripts/fw idf upload ir_bridge   # or idf.py -b 115200 flash
+```
+
+## Live rig (Haruna) — `ir21`
+
+One classic ESP32 on Haruna USB (`/dev/ttyUSB0`, CP2102), running **`ir_bridge`**. This is a **placement module** (MAC `58:2a:bd:78:58:20`). The previous board was `ir-mc-582abd78af4c` at `192.168.72.20` / `ir.lan`.
 
 | Item | Value |
 |------|--------|
@@ -24,7 +44,7 @@ sudo systemctl stop ir-mc-serial-log
 sudo systemctl start ir-mc-serial-log
 ```
 
-Phone remotes: `http://192.168.72.21/` (Sceptre + soundbar). Lab UI: `/lab`. Haruna ethernet (`192.168.72.3`) can time out on HTTP to this STA; phones on Wi‑Fi are fine.
+Haruna ethernet (`192.168.72.3`) can time out on HTTP to this STA; phones on Wi‑Fi are fine.
 
 IR frames are logged as `IRMSG …` on UART. Haruna service `ir-mc-serial-log` appends them to `~/User-Hackable/IR-MC/logs/ir-serial.log`.
 

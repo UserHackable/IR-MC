@@ -33,12 +33,12 @@ Living spec: [ESP32-IR-Remote-Bridge.md](ESP32-IR-Remote-Bridge.md).
 
 ## Status
 
-Firmware compiles against ESP-IDF 5.3.x. The live bench board is on **Haruna**
-(`ir21` / `192.168.72.21` / `ir-mc-582abd785820`): TK16 TX on GPIO18 (GPIO-direct,
-~8 ft), TK15 learn on GPIO19, TK64 analog on GPIO34. Sceptre is Sony 12-bit
-addr 1: vol± 18/19, power **toggle 21**. Soundbar is extended NEC addr **46723**:
-vol± 11/14; a tap is 1 data frame + 3 AGC repeats (`ir_bridge` 0.3.4). Next
-hardware: 2N2222 + 5 V. See [docs/STATUS.md](docs/STATUS.md).
+Firmware compiles against ESP-IDF 5.3.x. Two live blasters: **Noelle** USB
+(`ir22` / `192.168.72.22` / `ir-mc-489d31e61010`) with the breadboard 2N2222
+emitter on GPIO18, and **Haruna** (`ir21` / `192.168.72.21`) with GPIO-direct
+TK16. Sceptre is Sony 12-bit addr 1: vol± 18/19, power **toggle 21**. Soundbar
+is extended NEC addr **46723**: vol± 11/14; a tap is 1 data frame + 3 AGC
+repeats (`ir_bridge` 0.3.4). See [docs/STATUS.md](docs/STATUS.md).
 
 | Piece | State |
 |-------|--------|

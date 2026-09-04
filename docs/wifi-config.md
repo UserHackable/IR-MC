@@ -64,16 +64,28 @@ $EDITOR secrets/wifi.yaml
 `ir_bridge` reads NVS namespace `wifi` keys `ssid` and `password`. It does
 **not** embed the password in the app binary. HTTP works even if MQTT is unset.
 
-Optional NVS keys in the same `wifi` namespace (set with `POST /config/net`,
-no Wi‑Fi reflash):
+Per-board identity is **not** in `wifi.yaml` (that file is shared). Pass it at
+provision time, or later with `POST /config/net`:
 
-| Key | Example | Effect |
-|-----|---------|--------|
-| `hostname` | `ir` | DHCP option 12 (GFiber hostname) |
-| `ip` | `192.168.72.20` | Static address (empty → DHCP) |
-| `gateway` | `192.168.72.1` | Default if omitted: `192.168.72.1` |
-| `netmask` | `255.255.255.0` | Default if omitted: `255.255.255.0` |
+```bash
+WIFI_HOSTNAME=ir22 WIFI_IP=192.168.72.22 ESPTOOL_BAUD=115200 \
+  ./scripts/fw idf nvs-wifi
+```
 
-The Haruna placement blaster is **`ir21`** at **`192.168.72.21`**.
-The previous module was **`ir`** at **`192.168.72.20`** (`ir.lan`).
-The USB learn board on Noelle stays on DHCP.
+| Env / key | Example | Effect |
+|-----------|---------|--------|
+| `WIFI_HOSTNAME` / `hostname` | `ir22` | DHCP option 12 (GFiber hostname) |
+| `WIFI_IP` / `ip` | `192.168.72.22` | Static address (empty → DHCP) |
+| `WIFI_GATEWAY` / `gateway` | `192.168.72.1` | Default if omitted: `192.168.72.1` |
+| `WIFI_NETMASK` / `netmask` | `255.255.255.0` | Default if omitted: `255.255.255.0` |
+| `ESPTOOL_BAUD` | `115200` | CP2102 boards often drop the stub at 460800 |
+
+`POST /config/net` writes the same keys without a Wi‑Fi reflash (empty `ip`
+returns to DHCP). Flashing NVS replaces the whole partition, so hostname/IP
+must be included on every `nvs-wifi` run or set again afterward.
+
+| Name | IP | Notes |
+|------|----|-------|
+| `ir` | `192.168.72.20` | Previous module (`ir.lan`) |
+| `ir21` | `192.168.72.21` | Haruna placement blaster |
+| `ir22` | `192.168.72.22` | Noelle USB, breadboard 2N2222 emitter |
