@@ -1,30 +1,30 @@
 # Project status (snapshot)
 
-Last updated: **2026-09-04** (TV bounce works; soundbar TX now matches a handheld tap: 1 NEC data frame + 3 AGC repeats).
+Last updated: **2026-09-04** (placement module at `.21`; TV and soundbar both work to ~8 ft on GPIO-direct TK16).
 
 ## Live rig (Haruna)
 
-One classic ESP32 on Haruna USB (`/dev/ttyUSB0`, CP2102), running **`ir_bridge`**:
+One classic ESP32 on Haruna USB (`/dev/ttyUSB0`, CP2102), running **`ir_bridge`**. This is a **new module** (MAC `58:2a:bd:78:58:20`) used to test transmitter placement. The previous board was `ir-mc-582abd78af4c` at `192.168.72.20` / `ir.lan`.
 
 | Item | Value |
 |------|--------|
-| Identity | `ir-mc-582abd78af4c` |
-| Name | `ir` / `ir.lan` (`ir-mc.lan` still aliases) |
-| IP | `192.168.72.20` (static, below GFiber DHCP) |
+| Identity | `ir-mc-582abd785820` |
+| Name | `ir21` |
+| IP | `192.168.72.21` (static) |
 | App | `ir_bridge` 0.3.4 |
-| TK16 (TX LED) | GPIO **18** |
+| TK16 (TX LED) | GPIO **18**, GPIO-direct (too weak beyond ~8 ft) |
 | TK15 (demod RX) | GPIO **19**, 3.3 V |
 | TK64 (raw phototransistor) | GPIO **34** ADC, 3.3 V |
 
-Flash/build on Haruna. Stop the serial logger first:
+Flash this CP2102 at **115200** — 460800 dropped the stub. Stop the serial logger first:
 
 ```bash
 sudo systemctl stop ir-mc-serial-log
-./scripts/fw idf upload ir_bridge
+# esptool -b 115200 … or idf.py -b 115200 flash
 sudo systemctl start ir-mc-serial-log
 ```
 
-Phone remotes: `http://ir.lan/` or `http://192.168.72.20/` (Sceptre + soundbar). Lab UI: `/lab`.
+Phone remotes: `http://192.168.72.21/` (Sceptre + soundbar). Lab UI: `/lab`. Haruna ethernet (`192.168.72.3`) can time out on HTTP to this STA; phones on Wi‑Fi are fine.
 
 IR frames are logged as `IRMSG …` on UART. Haruna service `ir-mc-serial-log` appends them to `~/User-Hackable/IR-MC/logs/ir-serial.log`.
 
@@ -71,7 +71,8 @@ Ceiling TK16 scatter into TK15 is garbled for this protocol too. Bar response is
 ## Range / drive
 
 - Transistor + 3×100 Ω (~33 Ω) + IR LED on the original `ir-mc-489d31e61010`: ~**95 mA**. Volume reliable inside ~**8 ft**, iffy beyond.
-- TK16 driven **GPIO-direct** on GPIO 18 (current Haruna board): weaker at a distance; **too hot** when the LED sits centimetres from the TV IR window. Inverse-square: GPIO-direct at ~2 in can still outshine a 100 mA blast at 8 ft.
+- **2026-09-04 placement board (`ir21` / `.21`):** GPIO-direct TK16. Both Sceptre and soundbar work to about **8 ft**, then drop. Codes and bounce angle are fine; current is the limit. Next is a discrete **2N2222 + 5 V** transmitter — disconnect TK16 from GPIO 18 first. See [hardware.md](hardware.md).
+- TK16 driven **GPIO-direct** on GPIO 18: **too hot** when the LED sits centimetres from the TV IR window. Inverse-square: GPIO-direct at ~2 in can still outshine a 100 mA blast at 8 ft.
 - **Working geometry (2026-09-03):** TK16 aimed at the **ceiling**, bounce into the Sceptre IR window. GPIO-direct, duty **0.33**, Sony gap **25 ms** (RMT-accurate), power repeat 5. Phone remotes at `http://ir.lan/` reliable.
 - Pointing the LED into the IR window (centimetres away) saturates the TV AGC. Carrier-duty dimming (0.12) does not drop peak current and did not help.
 - TK15 is **not** a proxy once the LED points at the ceiling (it only sees scatter; probe may report `distorted` while the TV is fine).
@@ -88,9 +89,9 @@ Ceiling TK16 scatter into TK15 is garbled for this protocol too. Bar response is
 
 ## Next bench (solder)
 
-1. Handheld soundbar remote **works** from the same ceiling bounce. Path is fine; GPIO-direct is too weak. See [hardware.md Stronger ceiling LED](hardware.md).
-2. Solder **2N2222 + 5 V** on the existing ceiling-aimed LED. Unplug USB. Do not GPIO-direct. Do not aim at the TV IR window.
-3. After solder: TV Info still works, then Soundbar VOL± (`http://ir.lan/` Soundbar tab). Firmware 0.3.4 sends 1 NEC data frame + 3 AGC repeats (9/2.25 ms) on a 110 ms period, matching a handheld tap.
+1. Handheld soundbar remote **works** from the same ceiling bounce. Path is fine; GPIO-direct dies around **8 ft**. See [hardware.md Stronger ceiling LED](hardware.md).
+2. Unplug USB. Disconnect TK16 from GPIO 18. Solder **2N2222 + 5 V** (Rb 330 Ω, Rled 22–68 Ω) on a ceiling-aimed 940 nm LED. Do not GPIO-direct. Do not aim at the TV IR window.
+3. After solder: TV Info still works, then Soundbar VOL± (`http://192.168.72.21/` Soundbar tab). Firmware 0.3.4 already sends 1 NEC data frame + 3 AGC repeats.
 4. Second LED (forward) only if step 3 is still deaf.
 5. One long RMT stream for holds — later. Rewire TK64 if analog echo is wanted.
 

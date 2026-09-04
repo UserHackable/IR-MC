@@ -74,5 +74,6 @@ no Wi‑Fi reflash):
 | `gateway` | `192.168.72.1` | Default if omitted: `192.168.72.1` |
 | `netmask` | `255.255.255.0` | Default if omitted: `255.255.255.0` |
 
-The Haruna TV blaster is **`ir`** at **`192.168.72.20`** (`ir.lan`).
+The Haruna placement blaster is **`ir21`** at **`192.168.72.21`**.
+The previous module was **`ir`** at **`192.168.72.20`** (`ir.lan`).
 The USB learn board on Noelle stays on DHCP.

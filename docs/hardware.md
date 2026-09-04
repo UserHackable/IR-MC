@@ -84,11 +84,11 @@ experimental and not wired in v0.
 
 ## Stronger ceiling LED (solder next) — soundbar bounce
 
-**2026-09-04:** The real soundbar remote **does** reach the bar via ceiling
-bounce from the same spot as TK16. Geometry is fine. Codes match (extended NEC
-addr 46723, vol_up cmd 11). Firmware 0.3.4 sends a handheld tap: 1 data frame +
-3 AGC repeats. The remaining weak link is GPIO-direct on GPIO 18 (~tens of mA;
-a handheld is ~100 mA pulsed). TK15 next to the LED is not a TX audit on this
+**2026-09-04:** Placement board `ir21` (`192.168.72.21`). Both TV and soundbar
+work to about **8 ft** with GPIO-direct TK16, then drop. Geometry and codes are
+fine (extended NEC addr 46723, vol_up cmd 11; firmware 0.3.4 sends 1 data frame
++ 3 AGC repeats). The remaining weak link is GPIO 18 current (~tens of mA; a
+handheld is ~100 mA pulsed). TK15 next to the LED is not a TX audit on this
 geometry — working TV blasts also come back `distorted`.
 
 Solder the **2N2222 + 5 V** drive on the **existing** ceiling-aimed LED first.
@@ -112,8 +112,8 @@ the LED from the GPIO.
 ```
 
 After solder: TV Info must still work (may be *too* hot if you later point at
-the IR window — leave it on the ceiling). Then Soundbar VOL± on `http://ir.lan/`
-(Soundbar tab).
+the IR window — leave it on the ceiling). Then Soundbar VOL± on
+`http://192.168.72.21/` (Soundbar tab).
 
 ### Fallback: second LED
 

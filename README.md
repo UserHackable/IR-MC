@@ -34,10 +34,11 @@ Living spec: [ESP32-IR-Remote-Bridge.md](ESP32-IR-Remote-Bridge.md).
 ## Status
 
 Firmware compiles against ESP-IDF 5.3.x. The live bench board is on **Haruna**
-(`ir` / `ir.lan` / `ir-mc-582abd78af4c`, `192.168.72.20`): TK16 TX on GPIO18, TK15 learn on
-GPIO19, TK64 analog on GPIO34. Sceptre is Sony 12-bit addr 1: vol± 18/19,
-power **toggle 21**. Soundbar is extended NEC addr **46723**: vol± 11/14; a tap is
-1 data frame + 3 AGC repeats (`ir_bridge` 0.3.4). See [docs/STATUS.md](docs/STATUS.md).
+(`ir21` / `192.168.72.21` / `ir-mc-582abd785820`): TK16 TX on GPIO18 (GPIO-direct,
+~8 ft), TK15 learn on GPIO19, TK64 analog on GPIO34. Sceptre is Sony 12-bit
+addr 1: vol± 18/19, power **toggle 21**. Soundbar is extended NEC addr **46723**:
+vol± 11/14; a tap is 1 data frame + 3 AGC repeats (`ir_bridge` 0.3.4). Next
+hardware: 2N2222 + 5 V. See [docs/STATUS.md](docs/STATUS.md).
 
 | Piece | State |
 |-------|--------|
