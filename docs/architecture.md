@@ -43,7 +43,7 @@ Protocol objects:
 | `protocol` | `nec`, `samsung`, `sony`/`sirc`, or `raw` |
 | `address` / `command` | Protocol fields (integer) |
 | `freq` | Carrier Hz (default 38000, Sony 40000) |
-| `repeat` | Frame repeats |
+| `repeat` | Sony/Samsung: full-frame copies. NEC: 1 data frame + (`repeat`−1) AGC bursts (9/2.25 ms) on a 110 ms period. Soundbar keys use 4. |
 | `timings` | Raw microseconds: mark, space, mark, space, … |
 
 ## Discovery

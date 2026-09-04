@@ -39,7 +39,7 @@ a{color:#c4b5fd}
 <p class=note>ir.lan · 192.168.72.20 · GPIO 18. Soundbar may need its own LED. <a href=/lab>Lab</a></p>
 <script>
 const S={p:'sony',a:1,b:12,f:40000,r:3};
-const N={p:'nec',a:46723,b:32,f:38000,r:3};
+const N={p:'nec',a:46723,b:32,f:38000,r:4};
 function c(base,cmd,extra){return Object.assign({protocol:base.p,address:base.a,command:cmd,bits:base.b,freq:base.f,repeat:base.r},extra||{})}
 const TV={
   power:c(S,21,{repeat:5}),info:c(S,60),
@@ -104,7 +104,7 @@ function draw(){
       b.className='key '+(cell[2]||'');
       b.textContent=cell[1];
       b.onpointerdown=e=>{e.preventDefault();fire(cell[0]);b.classList.add('dn');
-        if(cell[3]){clearInterval(hold);hold=setInterval(()=>fire(cell[0]),220)} };
+        if(cell[3]){clearInterval(hold);hold=setInterval(()=>fire(cell[0]),which==='bar'?450:220)} };
       b.onpointerup=b.onpointerleave=()=>{b.classList.remove('dn');clearInterval(hold)};
       r.appendChild(b);
     }

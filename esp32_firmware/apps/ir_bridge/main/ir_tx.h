@@ -22,6 +22,7 @@ esp_err_t ir_tx_dc_end(void);
 esp_err_t ir_tx_send_raw(uint32_t freq_hz, const uint16_t *timings, size_t count,
                          int repeat, int gap_ms);
 
+/* repeat is 1 full NEC frame plus (repeat-1) AGC bursts on a 110 ms period. */
 esp_err_t ir_tx_send_nec(uint16_t address, uint16_t command, uint32_t freq_hz, int repeat);
 esp_err_t ir_tx_send_samsung(uint16_t address, uint16_t command, uint32_t freq_hz, int repeat);
 esp_err_t ir_tx_send_sony(uint16_t address, uint16_t command, int bits, uint32_t freq_hz, int repeat);

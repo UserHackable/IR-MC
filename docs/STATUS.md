@@ -1,6 +1,6 @@
 # Project status (snapshot)
 
-Last updated: **2026-09-03** (TV bounce works; soundbar bounce path works with the handheld, blaster is too weak).
+Last updated: **2026-09-04** (TV bounce works; soundbar TX now matches a handheld tap: 1 NEC data frame + 3 AGC repeats).
 
 ## Live rig (Haruna)
 
@@ -11,7 +11,7 @@ One classic ESP32 on Haruna USB (`/dev/ttyUSB0`, CP2102), running **`ir_bridge`*
 | Identity | `ir-mc-582abd78af4c` |
 | Name | `ir` / `ir.lan` (`ir-mc.lan` still aliases) |
 | IP | `192.168.72.20` (static, below GFiber DHCP) |
-| App | `ir_bridge` 0.3.3 |
+| App | `ir_bridge` 0.3.4 |
 | TK16 (TX LED) | GPIO **18** |
 | TK15 (demod RX) | GPIO **19**, 3.3 V |
 | TK64 (raw phototransistor) | GPIO **34** ADC, 3.3 V |
@@ -46,6 +46,28 @@ A real remote tap is about **3–8 frames** (~45 ms apart). Long 40-frame holds 
 
 Exact captured power timings were replayed as `sceptre/power_remote` (raw). That **did** toggle the TV on at least once from a close blaster.
 
+When the blaster was close enough for TK15 to decode, stored `sceptre/from_blast` matched the Sony encoder to about ±12 µs (addr 1 / cmd 18). Ceiling-aimed TX is **not** that: Info and Vol+ still work on the TV, but TK15 reports `distorted` raw scatter. Do not treat a bad local echo as proof the code is wrong.
+
+## Soundbar IR (learned 2026-09-03)
+
+Extended NEC, 38 kHz, 16-bit address **46723** (`0xB683`). Phone UI and catalog use the same pair. A real **volume up** on TK15 (ceiling bounce of the handheld) decoded as:
+
+| Command | Code | Notes |
+|---------|------|--------|
+| Volume up | 11 | One 32-bit data frame, then three AGC repeats |
+| Volume down | 14 | Same shape (earlier learns) |
+| Power | 77 | Catalog; not re-captured this session |
+| Mute | 67 | Catalog |
+
+Handheld volume-up tap (UART `IRMSG`):
+
+1. Full NEC frame, n=67, addr **46723** / cmd **11** (bits match the encoder).
+2. Three AGC bursts `~9000, 2250, 560` about **110 ms** apart — not extra full frames.
+
+Firmware **0.3.3** retransmitted the whole 32-bit frame `repeat` times. That is not what the remote sends. **0.3.4** sends 1 data frame + (`repeat`−1) AGC repeats on a 110 ms leading-edge period. Phone Soundbar keys use `repeat: 4` (~344 ms). Hard-refresh `http://ir.lan/` after flash.
+
+Ceiling TK16 scatter into TK15 is garbled for this protocol too. Bar response is the only verdict. GPIO-direct may still be too weak; next hardware step is 2N2222 + 5 V.
+
 ## Range / drive
 
 - Transistor + 3×100 Ω (~33 Ω) + IR LED on the original `ir-mc-489d31e61010`: ~**95 mA**. Volume reliable inside ~**8 ft**, iffy beyond.
@@ -62,12 +84,13 @@ Exact captured power timings were replayed as `sceptre/power_remote` (raw). That
 - LED anode sense `GET/POST /adc/led` (GPIO18 DC, ADC GPIO32, ×2 estimate)
 - TK64 analog `GET /adc/tk64`; learn JSON includes `tk64` min/max/mean
 - `IRMSG` UART lines + Haruna systemd logger
+- NEC TX: 1 data frame + AGC repeats (9/2.25 ms) on a 110 ms period (`ir_bridge` 0.3.4)
 
 ## Next bench (solder)
 
 1. Handheld soundbar remote **works** from the same ceiling bounce. Path is fine; GPIO-direct is too weak. See [hardware.md Stronger ceiling LED](hardware.md).
 2. Solder **2N2222 + 5 V** on the existing ceiling-aimed LED. Unplug USB. Do not GPIO-direct. Do not aim at the TV IR window.
-3. After solder: TV Info still works, then Soundbar VOL± (`http://ir.lan/` Soundbar tab). Firmware 0.3.3 already sends soundbar NEC **repeat 3**.
+3. After solder: TV Info still works, then Soundbar VOL± (`http://ir.lan/` Soundbar tab). Firmware 0.3.4 sends 1 NEC data frame + 3 AGC repeats (9/2.25 ms) on a 110 ms period, matching a handheld tap.
 4. Second LED (forward) only if step 3 is still deaf.
 5. One long RMT stream for holds — later. Rewire TK64 if analog echo is wanted.
 

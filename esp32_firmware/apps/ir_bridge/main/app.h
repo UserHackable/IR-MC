@@ -7,7 +7,7 @@
 #define APP_NAME    "ir_bridge"
 #endif
 #ifndef APP_VERSION
-#define APP_VERSION "0.3.3"
+#define APP_VERSION "0.3.4"
 #endif
 #ifndef ROLE
 #define ROLE        "ir_mc"

@@ -84,11 +84,12 @@ experimental and not wired in v0.
 
 ## Stronger ceiling LED (solder next) — soundbar bounce
 
-**2026-09-03:** The real soundbar remote **does** reach the bar via ceiling
-bounce from the same spot as TK16. Geometry is fine. The blaster is the weak
-link: GPIO-direct on GPIO 18, ~tens of mA; a handheld is ~100 mA pulsed.
-Soundbar keys were also a **single** NEC frame (handheld taps are 2–3). Firmware
-0.3.3 sends soundbar NEC **repeat 3**.
+**2026-09-04:** The real soundbar remote **does** reach the bar via ceiling
+bounce from the same spot as TK16. Geometry is fine. Codes match (extended NEC
+addr 46723, vol_up cmd 11). Firmware 0.3.4 sends a handheld tap: 1 data frame +
+3 AGC repeats. The remaining weak link is GPIO-direct on GPIO 18 (~tens of mA;
+a handheld is ~100 mA pulsed). TK15 next to the LED is not a TX audit on this
+geometry — working TV blasts also come back `distorted`.
 
 Solder the **2N2222 + 5 V** drive on the **existing** ceiling-aimed LED first.
 Do not add a second LED until that is still deaf. Unplug USB. Do **not** drive

@@ -324,8 +324,20 @@ static void nec_byte_lsb(uint16_t *t, size_t *n, uint8_t v)
     }
 }
 
+static uint32_t timings_sum_us(const uint16_t *t, size_t n)
+{
+    uint32_t s = 0;
+    for (size_t i = 0; i < n; i++) {
+        s += t[i];
+    }
+    return s;
+}
+
 esp_err_t ir_tx_send_nec(uint16_t address, uint16_t command, uint32_t freq_hz, int repeat)
 {
+    /* One full frame, then NEC AGC repeats (9 ms / 2.25 ms / 560 µs) on a
+     * 110 ms leading-edge period. A handheld soundbar tap is 1 + 3 of these.
+     * Retransmitting the whole 32-bit frame is not what the remote sends. */
     uint16_t t[2 + 32 * 2 + 2];
     size_t n = 0;
     t[n++] = 9000;
@@ -345,7 +357,63 @@ esp_err_t ir_tx_send_nec(uint16_t address, uint16_t command, uint32_t freq_hz, i
     if (freq_hz == 0) {
         freq_hz = 38000;
     }
-    return ir_tx_send_raw(freq_hz, t, n, repeat, 110);
+    if (repeat < 1) {
+        repeat = 1;
+    }
+    if (repeat == 1) {
+        return ir_tx_send_raw(freq_hz, t, n, 1, 0);
+    }
+
+    if (xSemaphoreTake(s_lock, pdMS_TO_TICKS(2000)) != pdTRUE) {
+        return ESP_ERR_TIMEOUT;
+    }
+
+    led_set(1);
+    esp_err_t err = apply_carrier(freq_hz);
+    if (err != ESP_OK) {
+        led_set(0);
+        xSemaphoreGive(s_lock);
+        return err;
+    }
+
+    const uint32_t period_us = 110000;
+    size_t ns = timings_to_symbols(t, n, s_symbols, IR_MAX_SYMBOLS);
+    uint32_t full_us = timings_sum_us(t, n);
+    ns = append_space(s_symbols, ns, IR_MAX_SYMBOLS,
+                      full_us < period_us ? period_us - full_us : 1000);
+
+    const uint16_t nec_repeat[3] = {9000, 2250, 560};
+    const uint32_t rep_us = 9000 + 2250 + 560;
+    const uint32_t rep_gap = period_us > rep_us ? period_us - rep_us : 1000;
+    for (int r = 1; r < repeat && ns < IR_MAX_SYMBOLS; r++) {
+        size_t add = timings_to_symbols(nec_repeat, 3, s_symbols + ns, IR_MAX_SYMBOLS - ns);
+        ns += add;
+        if (r + 1 < repeat) {
+            ns = append_space(s_symbols, ns, IR_MAX_SYMBOLS, rep_gap);
+        }
+    }
+
+    rmt_transmit_config_t tx_cfg = {
+        .loop_count = 0,
+        .flags.eot_level = 0,
+    };
+    /* rmt_tx_wait_all_done takes milliseconds, not ticks. A 1+3 AGC burst is ~440 ms. */
+    int wait_ms = 2000 + repeat * 150;
+    err = rmt_transmit(s_chan, s_encoder, s_symbols, ns * sizeof(rmt_symbol_word_t), &tx_cfg);
+    if (err == ESP_OK) {
+        err = rmt_tx_wait_all_done(s_chan, wait_ms);
+    }
+    ir_raw_poll();
+
+    led_set(0);
+    xSemaphoreGive(s_lock);
+    if (err == ESP_OK) {
+        ESP_LOGI(TAG, "sent NEC addr=%u cmd=%u frames=%d (1 data + AGC) duty=%.2f",
+                 (unsigned)address, (unsigned)command, repeat, (double)s_duty);
+    } else {
+        ESP_LOGE(TAG, "transmit failed: %s", esp_err_to_name(err));
+    }
+    return err;
 }
 
 esp_err_t ir_tx_send_samsung(uint16_t address, uint16_t command, uint32_t freq_hz, int repeat)

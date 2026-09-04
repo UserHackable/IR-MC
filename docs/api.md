@@ -38,6 +38,9 @@ NEC:
 {"protocol":"nec","address":4,"command":8,"freq":38000,"repeat":2}
 ```
 
+NEC `repeat` is 1 full data frame plus (`repeat`−1) AGC bursts (9 ms / 2.25 ms)
+on a 110 ms period, not copies of the 32-bit frame. Soundbar keys use 4.
+
 Raw timings (microseconds, mark/space pairs):
 
 ```json
