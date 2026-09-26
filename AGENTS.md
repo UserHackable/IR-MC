@@ -6,9 +6,10 @@ Human overview: [README.md](README.md). Keep this file and the README aligned wh
 
 ## Product
 
-**UserHackable** utility: a **classic ESP32** that joins Wi‑Fi and acts as a
-**network-addressable IR transceiver**. MQTT is the primary control surface;
-HTTP is for testing and clients without a broker.
+**UserHackable** utility: a **classic ESP32** IR transceiver. The Haruna board
+is 2.4 GHz only and cannot join SSID `Ferney` (5 GHz only). Mixomancer drives
+that board over USB (`/run/ir-mc/blast.sock` → `/dev/ttyUSB0`). MQTT and HTTP
+remain for a board that can associate. See [docs/STATUS.md](docs/STATUS.md).
 
 | Item | Detail |
 |------|--------|

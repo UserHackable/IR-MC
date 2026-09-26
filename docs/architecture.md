@@ -1,28 +1,38 @@
 # Architecture
 
-IR-MC is a small always-on ESP32 that sits on the LAN and **transmits IR**.
-Phones, computers, and home automation talk to it over **MQTT** (primary) or
-**HTTP** (testing / non-MQTT clients). It does not try to be a full remote
-emulator on-device; it is a **named command + raw timing** blaster.
+IR-MC is a small always-on ESP32 that **transmits IR**. The Haruna board
+is a classic ESP32 (2.4 GHz only). Shop SSID `Ferney` is 5 GHz only, so that
+board never joins the LAN. Mixomancer drives it over USB. MQTT and HTTP are
+still in the firmware for a board that can associate. It is a **named command
++ raw timing** blaster, not a full on-device remote emulator.
 
 ```text
-  phone / PC / HA
-        │
-        │  MQTT  ir/<device>/<command>
-        │  HTTP  POST /ir/<device>/<command>
-        ▼
-  ┌─────────────────────────────────┐
-  │  ESP32  (ir_bridge)             │
-  │   Wi‑Fi STA                     │
-  │   catalog (SPIFFS JSON)         │
-  │   RMT TX  GPIO18                │
-  └──────────────┬──────────────────┘
-                 │ NPN / MOSFET
-                 ▼
-            940 nm IR LED  →  TV / AC / …
+  Mixomancer Remotes                         phone / HA
+        │                                    │
+        │  /run/ir-mc/blast.sock             │  MQTT or HTTP
+        ▼                                    │  (only if the chip
+  ir-mc-serial-log  ── UART JSON line ──┐    │   can hear the AP)
+                                         ▼    ▼
+                                  ┌─────────────────────────────────┐
+                                  │  ESP32  (ir_bridge)             │
+                                  │   serial_cmd + optional Wi‑Fi   │
+                                  │   RMT TX  GPIO18                │
+                                  └──────────────┬──────────────────┘
+                                                 │
+                                                 ▼
+                                            940 nm IR LED  →  TV / AC / …
 ```
 
 ## Control path
+
+USB (the path that works on Haruna):
+
+1. Mixomancer writes one JSON line to `/run/ir-mc/blast.sock`.
+2. `ir-mc-serial-log` owns `/dev/ttyUSB0` and writes that line to the UART.
+3. `serial_cmd` parses it and calls `ir_execute_json`, or answers `{"op":"status"}`.
+4. The board prints `IRACK ` plus one JSON object. The bridge returns that JSON to the socket client.
+
+Wi-Fi, when the chip can actually hear the AP:
 
 1. Message arrives (MQTT topic or HTTP POST).
 2. If it names `device/command`, look up JSON in the catalog.

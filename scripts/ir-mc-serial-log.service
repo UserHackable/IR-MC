@@ -1,12 +1,13 @@
 [Unit]
-Description=IR-MC USB serial log (IRMSG lines from ESP32)
+Description=IR-MC USB bridge (log IR lines, accept blast commands)
 After=dev-ttyUSB0.device
-BindsTo=dev-ttyUSB0.device
 
 [Service]
 Type=simple
 User=rob
 SupplementaryGroups=uucp
+RuntimeDirectory=ir-mc
+Environment=IR_BLAST_SOCK=/run/ir-mc/blast.sock
 ExecStart=/usr/bin/python3 /home/rob/User-Hackable/IR-MC/scripts/ir-serial-log.py
 Restart=always
 RestartSec=2

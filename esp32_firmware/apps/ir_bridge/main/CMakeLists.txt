@@ -7,6 +7,7 @@ idf_component_register(
     "ir_raw.c"
     "catalog.c"
     "net_ctrl.c"
+    "serial_cmd.c"
   INCLUDE_DIRS "."
   PRIV_REQUIRES
     nvs_flash

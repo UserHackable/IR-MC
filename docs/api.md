@@ -1,6 +1,19 @@
 # Control API
 
-Default topic prefix is `ir`. HTTP listens on port **80**.
+Default topic prefix is `ir`. HTTP listens on port **80** when Wi-Fi is up.
+The Haruna board is reached over USB instead. See [STATUS.md](STATUS.md).
+
+## USB
+
+`ir-mc-serial-log.service` on Haruna listens on `/run/ir-mc/blast.sock` (mode `0666`) and owns `/dev/ttyUSB0`. One JSON object per line, same body as `POST /ir/send`. The bridge returns one JSON line. The board's own line is prefixed `IRACK `.
+
+```json
+{"protocol":"sony","address":1,"command":21,"bits":12,"freq":40000,"repeat":5}
+```
+
+`{"op":"status"}` does not transmit. Response includes `"ok":true` and `"tx":true`.
+
+Stop the service before flashing. CP2102 boards need `idf.py -b 115200`.
 
 ## HTTP
 

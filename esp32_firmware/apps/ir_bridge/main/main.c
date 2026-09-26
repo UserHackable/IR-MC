@@ -19,6 +19,7 @@
 #include "led_sense.h"
 #include "ir_raw.h"
 #include "net_ctrl.h"
+#include "serial_cmd.h"
 
 #include "driver/gpio.h"
 
@@ -305,6 +306,7 @@ void app_main(void)
 
 #if IR_TX_ENABLE
     ESP_ERROR_CHECK(ir_tx_init());
+    serial_cmd_start();
 #endif
 #if IR_RX_ENABLE
     ESP_ERROR_CHECK(ir_rx_init());

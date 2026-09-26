@@ -1,16 +1,40 @@
 # Project status (snapshot)
 
-Last updated: **2026-09-03** (breadboard emitter on Noelle programmed as `ir22` / `.22`).
+Last updated: **2026-09-26**. The Haruna blaster is driven over USB from Mixomancer. Wi-Fi to `Ferney` does not work on this chip.
 
-## Live boards
+## Live rig (Haruna USB) — `ir`
+
+One classic ESP32 on Haruna `/dev/ttyUSB0` (CP2102, serial `0001`). Boot identity **`ir-mc-582abd78af4c`** (MAC `58:2a:bd:78:af:4c`). NVS still says hostname `ir`, static `192.168.72.20`, SSID `Ferney`. That address is not on the LAN.
+
+| Item | Value |
+|------|--------|
+| Identity | `ir-mc-582abd78af4c` |
+| App | `ir_bridge` (USB command task added 2026-09-26) |
+| Control | Mixomancer → `/run/ir-mc/blast.sock` → `ir-mc-serial-log` → UART JSON line |
+| TX | GPIO **18** |
+| RX | GPIO **19** (TSOP) |
+| Flash baud | **115200** (460800 dropped the stub) |
+
+`ir21` (`58:2a:bd:78:58:20`, `.21`) is not the board on this port. The 2026-09-03 table below is historical.
+
+## Lessons (2026-09-26)
+
+- This ESP32 is **2.4 GHz only**. `Ferney` and `Ferney5` are advertised only on **5 GHz** (seen on channels 36, 44, 149, and 157). Haruna's own Intel 3165 hears other Google Fiber networks on 2.4 GHz and does not hear `Ferney` there. The chip logs `STA connecting to SSID 'Ferney'` and then `Wi-Fi disconnected — reconnect` about every 2.4 s. It never gets an IP, so `192.168.72.20` never answers ARP. Do not debug that as a bad static address or a dead USB cable.
+- The working control path does not use Wi-Fi. One JSON object per line on the USB UART, same fields as `POST /ir/send`. The board prints `IRACK {"ok":true,"tx":true}`. `{"op":"status"}` answers without transmitting.
+- Only `ir-mc-serial-log.service` may hold `/dev/ttyUSB0`. A second reader steals bytes and the socket bridge times out. Stop that unit before `idf.py -p /dev/ttyUSB0 -b 115200 flash`.
+- Opening the CP2102 toggles DTR/RTS and often resets the ESP. The bridge sets both false before `open`.
+- `nvs-wifi` replaces the whole NVS partition. A script that writes only `ssid` and `password` erases hostname and static IP. Pass `WIFI_HOSTNAME` and `WIFI_IP` on every run. Flashing the app (bootloader, partition table, `ir_bridge.bin`) does not erase NVS at `0x9000`.
+- Do not `BindsTo=dev-ttyUSB0.device`. A USB blip stops the unit cleanly and `Restart=always` does not start it again. The unit now only orders `After=` that device.
+
+## Live boards (as of 2026-09-03)
 
 | Name | IP | Identity | Where | TX |
 |------|----|----------|-------|----|
-| `ir` | `192.168.72.20` | `ir-mc-582abd78af4c` | still on LAN | `ir_bridge` 0.3.4 |
-| `ir21` | `192.168.72.21` | `ir-mc-582abd785820` | Haruna USB `/dev/ttyUSB0` | GPIO-direct TK16 |
+| `ir` | `192.168.72.20` | `ir-mc-582abd78af4c` | programmed for Wi-Fi; not reachable | `ir_bridge` |
+| `ir21` | `192.168.72.21` | `ir-mc-582abd785820` | was described as Haruna USB | GPIO-direct TK16 |
 | **`ir22`** | **`192.168.72.22`** | **`ir-mc-489d31e61010`** | **Noelle USB `/dev/ttyUSB0`** | **breadboard 2N2222 + 5 V IR LED** |
 
-Phone remotes: `http://192.168.72.22/` (this USB board) and `http://192.168.72.21/` (Haruna). Lab UI: `/lab`.
+Phone remotes from that date: `http://192.168.72.22/` and `http://192.168.72.21/`. Lab UI: `/lab`. Use the Mixomancer Remotes page for the Haruna board.
 
 ## Live rig (Noelle) — `ir22`
 
@@ -22,9 +46,9 @@ PORT=/dev/ttyUSB0 ESPTOOL_BAUD=115200 \
 PORT=/dev/ttyUSB0 ./scripts/fw idf upload ir_bridge   # or idf.py -b 115200 flash
 ```
 
-## Live rig (Haruna) — `ir21`
+## Live rig (Haruna) — historical `ir21` note, 2026-09-03
 
-One classic ESP32 on Haruna USB (`/dev/ttyUSB0`, CP2102), running **`ir_bridge`**. This is a **placement module** (MAC `58:2a:bd:78:58:20`). The previous board was `ir-mc-582abd78af4c` at `192.168.72.20` / `ir.lan`.
+This section described a different module than the one on the port on 2026-09-26. Kept for the pin and aim notes.
 
 | Item | Value |
 |------|--------|
